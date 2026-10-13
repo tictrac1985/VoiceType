@@ -1,0 +1,21 @@
+bin/
+obj/
+.vs/
+*.user
+release/
+TestResults/
+
+# مفاتيح وبيانات خاصة — لا تُرفع أبدًا
+eval/keys.local.json
+eval/results/
+eval/audio/*
+!eval/audio/README.md
+
+# بيانات البرنامج على الجهاز — مفاتيح مشفرة، إعدادات، سجلات، نماذج
+data/
+keys.dat
+*.dat
+models/
+*.gguf
+ggml-*.bin
+logs/

@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    VoiceType: البرنامج الرئيسي.
+    زر مايك عائم يكتب كلامك في أي برنامج + تفريغ الملفات الصوتية + النماذج والمفاتيح والإعدادات بواجهة عربية.
+    الواجهة صفحة HTML داخل WebView2، والمايك العائم والإدخال في البرامج بـ WPF و Win32.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <RootNamespace>VoiceType.App</RootNamespace>
+    <AssemblyName>VoiceType</AssemblyName>
+    <Product>VoiceType</Product>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>voicetype.ico</ApplicationIcon>
+    <NoWarn>$(NoWarn);WFO5001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- منع التعارض بين أسماء WPF و WinForms (نستخدم WinForms للأيقونة بجوار الساعة فقط) -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="ui\*.*" LogicalName="VoiceType.App.ui.%(Filename)%(Extension)" />
+    <Resource Include="voicetype.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VoiceType.Core\VoiceType.Core.csproj" />
+    <ProjectReference Include="..\VoiceType.Providers\VoiceType.Providers.csproj" />
+    <ProjectReference Include="..\VoiceType.Text\VoiceType.Text.csproj" />
+    <ProjectReference Include="..\VoiceType.Settings\VoiceType.Settings.csproj" />
+    <ProjectReference Include="..\VoiceType.Speech\VoiceType.Speech.csproj" />
+  </ItemGroup>
+</Project>

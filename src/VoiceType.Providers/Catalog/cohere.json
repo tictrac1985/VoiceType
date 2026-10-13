@@ -1,0 +1,34 @@
+{
+  "id": "cohere",
+  "name": "Cohere Transcribe",
+  "pricing": "trial",
+  "pricingNote": "مفتاح تجربة مجاني بعدد طلبات محدود.",
+  "description": "نموذج Cohere للعربية: يدعم اللهجات الرئيسية ومنها المصرية، ومصمم للعربي المختلط بالإنجليزي. اللغة إجبارية.",
+  "website": "https://docs.cohere.com/docs/transcribe",
+  "keyUrl": "https://dashboard.cohere.com/api-keys",
+  "variables": { "base_url": "https://api.cohere.com/v2" },
+  "models": [
+    { "id": "cohere-transcribe-arabic-07-2026", "notes": "متخصص في العربية واللهجات" },
+    { "id": "cohere-transcribe-03-2026", "notes": "متعدد اللغات" }
+  ],
+  "defaultModel": "cohere-transcribe-arabic-07-2026",
+  "timeoutSeconds": 90,
+  "request": {
+    "url": "{base_url}/audio/transcriptions",
+    "auth": { "type": "bearer" },
+    "body": {
+      "type": "multipart",
+      "fileField": "file",
+      "fields": {
+        "model": "{model}",
+        "language": "{language}",
+        "temperature": "{temperature}"
+      }
+    }
+  },
+  "response": { "textPath": "text", "errorPath": "message" },
+  "capabilities": {
+    "formats": [ "flac", "mp3", "ogg", "wav" ],
+    "languageRequired": true
+  }
+}

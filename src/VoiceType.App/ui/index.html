@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="spotlight">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>صدى</title>
+<script>try { const t = localStorage.getItem('sada.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<link rel="stylesheet" href="app.css">
+<script type="importmap">{ "imports": { "three": "./three.module.min.js" } }</script>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== الهوية ===== -->
+  <div class="brand">
+    <span class="brand-mark"><i></i><i></i><i></i><i></i></span>
+    <span class="brand-name">صدى</span>
+    <span class="brand-latin">Sada</span>
+  </div>
+
+  <!-- ===== التنقل ===== -->
+  <nav class="nav">
+    <button class="nav-item active" data-page="dictation" title="الإملاء"><svg><use href="#i-mic"/></svg><span>الإملاء</span></button>
+    <button class="nav-item" data-page="files" title="تفريغ ملف"><svg><use href="#i-wave"/></svg><span>ملفات</span></button>
+    <button class="nav-item" data-page="models" title="النماذج والمفاتيح"><svg><use href="#i-cube"/></svg><span>النماذج</span></button>
+    <button class="nav-item" data-page="settings" title="الإعدادات"><svg><use href="#i-gear"/></svg><span>الإعدادات</span></button>
+  </nav>
+
+  <!-- ===== أدوات ===== -->
+  <div class="tools">
+    <span class="status-pill" id="statusPill"><i></i><span id="statusText">—</span></span>
+    <div class="theme-switch">
+      <button class="icon-btn" id="themeBtn" title="المظهر"><svg><use href="#i-palette"/></svg></button>
+      <div class="theme-pop" id="themePop" hidden>
+        <button data-theme-set="spotlight"><span class="sw sw-spotlight"></span>تحت الضوء</button>
+        <button data-theme-set="orb"><span class="sw sw-orb"></span>الكرة الزجاجية</button>
+        <button data-theme-set="monolith"><span class="sw sw-monolith"></span>الخزف</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="main">
+
+    <!-- ========== الإملاء ========== -->
+    <section class="page active" id="page-dictation">
+      <div class="dash">
+
+        <div class="tile stage-tile" id="stageTile">
+          <div class="stage" id="stage">
+            <div class="stage-fallback"><span></span></div>
+          </div>
+          <button class="stage-hit" id="testMic" title="جرّب هنا: انقر للتحدث، وانقر مرة أخرى للإيقاف"></button>
+          <div class="stage-info">
+            <div class="state" id="stateText">جاهز</div>
+            <div class="keys" id="hotkeyKeys"></div>
+          </div>
+          <div class="meter" id="testMeter"></div>
+        </div>
+
+        <div class="tile engine-tile">
+          <div class="tile-head"><b>المحرّك</b><button class="link" data-go="settings">تغيير</button></div>
+          <div class="eng">
+            <span class="eng-icon online"><svg><use href="#i-cloud"/></svg></span>
+            <div class="eng-text"><b id="engPrimary">—</b><span id="engPrimaryWhere"></span></div>
+            <span class="tag accent">أساسي</span>
+          </div>
+          <div class="eng">
+            <span class="eng-icon local"><svg><use href="#i-chip"/></svg></span>
+            <div class="eng-text"><b id="engFallback">—</b><span id="engFallbackWhere"></span></div>
+            <span class="tag ok">احتياطي</span>
+          </div>
+          <div class="seg-row" id="writingModes" title="طريقة الكتابة">
+            <button data-writing="normal">كما قلته</button>
+            <button data-writing="formal">رسمي</button>
+            <button data-writing="email">إيميل</button>
+            <button data-writing="english">English</button>
+          </div>
+        </div>
+
+        <div class="tile float-tile">
+          <div class="tile-head"><b>زر المايك العائم</b><label class="switch"><input type="checkbox" id="micToggle"><span></span></label></div>
+          <div class="float-opts">
+            <div class="sizes" id="micSizes">
+              <button data-mic-size="small" title="صغير"><i style="--s:18px"></i></button>
+              <button data-mic-size="medium" title="متوسط"><i style="--s:24px"></i></button>
+              <button data-mic-size="large" title="كبير"><i style="--s:30px"></i></button>
+            </div>
+            <div class="colors" id="micColors"></div>
+          </div>
+        </div>
+
+        <div class="tile stats-tile">
+          <div class="tile-head"><b>الكلمات</b><span class="dim" id="statCount"></span></div>
+          <div class="stat-row"><b class="stat-big" id="statWords">0</b><div class="spark" id="statSpark"></div></div>
+        </div>
+
+        <div class="tile history-tile">
+          <div class="tile-head">
+            <b>النصوص</b><span class="count" id="historyCount"></span>
+            <span class="spacer"></span>
+            <button class="btn ghost sm danger-text" id="clearHistory"><svg><use href="#i-trash"/></svg>مسح الكل</button>
+          </div>
+          <div class="banner warn" id="noEngineBanner" hidden>
+            <svg><use href="#i-alert"/></svg><div>لم يتم اختيار نموذج</div>
+            <button class="btn primary sm" data-go="models">اختيار</button>
+          </div>
+          <div class="banner info" id="gpuBanner" hidden>
+            <svg><use href="#i-bolt"/></svg><div>تسريع كرت الشاشة غير مفعّل</div>
+            <button class="btn primary sm" data-go="models">تفعيل</button>
+          </div>
+          <div class="test-result" id="testResult" hidden>
+            <span class="tr-label">تجربة</span>
+            <p id="testText"></p>
+            <button class="icon-btn" id="testCopy" title="نسخ"><svg><use href="#i-copy"/></svg></button>
+          </div>
+          <div id="history" class="history"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ========== تفريغ ملف ========== -->
+    <section class="page" id="page-files">
+      <header class="page-head"><h1>تفريغ ملف</h1></header>
+
+      <div class="tile meeting" id="meetingTile">
+        <div class="meet-icon"><svg><use href="#i-users"/></svg></div>
+        <div class="grow">
+          <b>تسجيل اجتماع</b>
+          <div class="dim sm" id="meetingInfo">صوت الجهاز وصوتك</div>
+        </div>
+        <span class="meet-timer" id="meetingTimer" hidden>00:00</span>
+        <div class="meet-level" id="meetingLevel" hidden><i></i></div>
+        <label class="check" id="meetingMicRow"><input type="checkbox" id="meetingMic" checked><span>صوتي أيضًا</span></label>
+        <button class="btn ghost sm" id="meetingCancel" hidden>إلغاء</button>
+        <button class="btn primary" id="meetingBtn"><span class="rec-dot"></span><span id="meetingBtnText">تسجيل</span></button>
+      </div>
+
+      <div class="tile dropzone" id="dropzone">
+        <div class="drop-icon"><svg><use href="#i-upload"/></svg></div>
+        <h3>اسحب الملف هنا</h3>
+        <button class="btn primary" id="pickFile"><svg><use href="#i-folder"/></svg>اختيار ملف</button>
+        <p class="dim sm">MP3 · WAV · M4A · OGG · FLAC · MP4</p>
+      </div>
+
+      <div class="tile file-card" id="fileCard" hidden>
+        <div class="file-row">
+          <div class="file-icon"><svg><use href="#i-wave"/></svg></div>
+          <div class="file-meta">
+            <div class="file-name" id="fileName"></div>
+            <div class="dim sm" id="fileSize"></div>
+          </div>
+          <button class="btn ghost sm" id="changeFile">ملف آخر</button>
+        </div>
+        <div class="field-row">
+          <label class="field grow">
+            <span>النموذج</span>
+            <select id="fileEngine"></select>
+          </label>
+          <button class="btn primary lg" id="startFile"><svg><use href="#i-play"/></svg>ابدأ</button>
+        </div>
+        <div class="progress-box" id="fileProgress" hidden>
+          <div class="progress-top"><span id="fileStage">جارٍ التحضير…</span><b id="filePercent">0%</b></div>
+          <div class="bar"><i id="fileBar"></i></div>
+          <button class="btn ghost sm danger-text" id="cancelFile">إلغاء</button>
+        </div>
+      </div>
+
+      <div class="tile" id="resultCard" hidden>
+        <div class="tile-head">
+          <b>النص</b>
+          <div class="chips" id="resultChips"></div>
+        </div>
+        <textarea id="resultText" class="result-text" spellcheck="false"></textarea>
+        <div class="result-actions">
+          <button class="btn primary" id="copyResult"><svg><use href="#i-copy"/></svg>نسخ</button>
+          <button class="btn" data-export="docx"><svg><use href="#i-doc"/></svg>Word</button>
+          <button class="btn" data-export="txt"><svg><use href="#i-file"/></svg>TXT</button>
+          <button class="btn" data-export="srt" id="exportSrt"><svg><use href="#i-sub"/></svg>SRT</button>
+          <button class="btn" id="summarizeBtn"><svg><use href="#i-list"/></svg>تلخيص ومهام</button>
+          <span class="spacer"></span>
+          <button class="btn ghost sm" id="showSaved" title="النسخة المحفوظة تلقائيًا"><svg><use href="#i-folder"/></svg>المجلد</button>
+        </div>
+        <div class="summary-box" id="summaryBox" hidden>
+          <div class="tile-head"><b>الملخص والمهام</b><span class="spacer"></span><button class="icon-btn" id="copySummary" title="نسخ"><svg><use href="#i-copy"/></svg></button></div>
+          <div class="summary-text" id="summaryText"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== النماذج ========== -->
+    <section class="page" id="page-models">
+      <header class="page-head">
+        <h1>النماذج والمفاتيح</h1>
+        <div class="tabs">
+          <button class="tab active" data-tab="local"><svg><use href="#i-chip"/></svg>على جهازك</button>
+          <button class="tab" data-tab="online"><svg><use href="#i-cloud"/></svg>الإنترنت</button>
+        </div>
+      </header>
+
+      <div class="tab-panel active" id="tab-local">
+        <div class="tile gpu-card" id="gpuCard"></div>
+        <div class="model-grid" id="localModels"></div>
+        <div class="tile">
+          <div class="tile-head"><b>نموذج آخر</b></div>
+          <div class="field-row">
+            <button class="btn" id="addModelFile"><svg><use href="#i-folder"/></svg>من جهازي</button>
+            <input class="grow" id="modelUrl" dir="ltr" placeholder="https://huggingface.co/…/ggml-model.bin">
+            <button class="btn" id="addModelUrl"><svg><use href="#i-download"/></svg>تنزيل</button>
+          </div>
+          <div class="progress-box" id="urlProgress" hidden>
+            <div class="progress-top"><span id="urlProgressText"></span></div>
+            <div class="bar"><i id="urlBar"></i></div>
+          </div>
+          <p class="dim sm"><a href="#" id="openModels" class="path" dir="ltr"></a></p>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-online">
+        <div id="providers" class="providers"></div>
+      </div>
+    </section>
+
+    <!-- ========== الإعدادات ========== -->
+    <section class="page" id="page-settings">
+      <header class="page-head"><h1>الإعدادات</h1></header>
+
+      <div class="tile">
+        <div class="tile-head"><b>المظهر</b></div>
+        <div class="theme-cards">
+          <button class="theme-card" data-theme-set="spotlight"><span class="tc-art tc-spotlight"><i></i></span><b>تحت الضوء</b></button>
+          <button class="theme-card" data-theme-set="orb"><span class="tc-art tc-orb"><i></i></span><b>الكرة الزجاجية</b></button>
+          <button class="theme-card" data-theme-set="monolith"><span class="tc-art tc-monolith"><i></i></span><b>الخزف</b></button>
+        </div>
+      </div>
+
+      <div class="tile">
+        <div class="tile-head"><b>النماذج</b></div>
+        <div class="set-row"><b>الأساسي</b><select id="setPrimary" data-setting="primary"></select></div>
+        <div class="set-row"><b>الاحتياطي</b><select id="setFallback" data-setting="fallback"></select></div>
+        <div class="set-row"><b>استخدام الاحتياطي عند الفشل</b><label class="switch"><input type="checkbox" data-setting="useFallback"><span></span></label></div>
+        <div class="set-row"><b>تفريغ الملفات</b><select id="setFiles" data-setting="filesEngine"></select></div>
+      </div>
+
+      <div class="tile">
+        <div class="tile-head"><b>الكلام والنص</b></div>
+        <div class="set-row" title="تجريبية: كل جملة تُكتب عند الوقفة بدون انتظار الإيقاف، لكن دقتها أقل. اتركها مغلقة لأفضل دقة (يحتاج مفتاح Gemini)"><b>الكتابة أثناء الكلام (تجريبية)</b><label class="switch"><input type="checkbox" data-setting="liveTyping"><span></span></label></div>
+        <div class="set-row"><b>اللغة</b>
+          <select data-setting="language">
+            <option value="ar">العربية</option>
+            <option value="">تلقائي</option>
+            <option value="en">الإنجليزية</option>
+          </select>
+        </div>
+        <div class="set-row"><b>التنسيق</b>
+          <select data-setting="textMode">
+            <option value="General">منسّق</option>
+            <option value="Technical">منسّق + مصطلحات تقنية</option>
+            <option value="Raw">بدون تعديل</option>
+          </select>
+        </div>
+        <div class="set-row"><b>الأسطر</b>
+          <select data-setting="lineBreaks">
+            <option value="Sentences">كل جملة في سطر</option>
+            <option value="None">فقرة واحدة</option>
+          </select>
+        </div>
+        <div class="set-row" title="يمنع لخبطة العربي مع الإنجليزي"><b>ضبط اتجاه العربي مع الإنجليزي</b><label class="switch"><input type="checkbox" data-setting="fixMixedDirection"><span></span></label></div>
+        <div class="set-row" title="Word، المفكرة، Outlook، Chrome، Edge، Firefox، Telegram"><b>العربي يبدأ من اليمين</b><label class="switch"><input type="checkbox" data-setting="arabicStartsRight"><span></span></label></div>
+      </div>
+
+      <div class="tile" id="profilesCard">
+        <div class="tile-head">
+          <b title="الكتابة تتغير حسب البرنامج الذي تكتب فيه">حسب البرنامج</b>
+          <span class="spacer"></span>
+          <label class="switch"><input type="checkbox" data-setting="useAppProfiles"><span></span></label>
+        </div>
+        <div id="profiles" class="profiles"></div>
+        <div class="recent-apps" id="recentApps"></div>
+        <div class="field-row">
+          <button class="btn sm" id="addProfile"><svg><use href="#i-plus"/></svg>إعداد جديد</button>
+          <span class="spacer"></span>
+          <button class="btn ghost sm" id="resetProfiles">الإعدادات الافتراضية</button>
+        </div>
+      </div>
+
+      <div class="tile" id="learningCard">
+        <div class="tile-head">
+          <b title="يتعلّم النموذج المحلي الكلمات الإنجليزية من Gemini">التعلّم من Gemini</b>
+          <span class="spacer"></span>
+          <label class="switch"><input type="checkbox" data-setting="learnFromOnline"><span></span></label>
+        </div>
+        <div class="learn-stats" id="learnStats"></div>
+        <div id="learnRules" class="learn-rules"></div>
+        <div id="learnTerms" class="model-chips"></div>
+        <div class="field-row"><span class="spacer"></span><button class="btn ghost sm danger-text" id="learnClear"><svg><use href="#i-trash"/></svg>مسح ما تعلّمه</button></div>
+      </div>
+
+      <div class="tile">
+        <div class="tile-head"><b>المايك والتشغيل</b></div>
+        <div class="set-row"><b>الميكروفون</b><select id="setMicDevice" data-setting="microphoneDevice"></select></div>
+        <div class="set-row"><b>زر المايك العائم</b><span class="row-end"><kbd id="setHotkey"></kbd><label class="switch"><input type="checkbox" id="setMicVisible"><span></span></label></span></div>
+        <div class="set-row"><b>حجم الزر</b>
+          <select data-setting="micSize">
+            <option value="small">صغير</option>
+            <option value="medium">متوسط</option>
+            <option value="large">كبير</option>
+          </select>
+        </div>
+        <div class="set-row"><b>لون الزر</b><select data-setting="micColor" id="setMicColor"></select></div>
+        <div class="set-row"><b>فوق كل البرامج</b><label class="switch"><input type="checkbox" data-setting="micAlwaysOnTop"><span></span></label></div>
+        <div class="set-row"><b>شفاف وهو غير مستخدم</b><label class="switch"><input type="checkbox" data-setting="micDimWhenIdle"><span></span></label></div>
+        <div class="set-row"><b>أصوات التنبيه</b><label class="switch"><input type="checkbox" data-setting="sounds"><span></span></label></div>
+        <div class="set-row"><b>التشغيل مع ويندوز</b><label class="switch"><input type="checkbox" data-setting="startWithWindows"><span></span></label></div>
+      </div>
+
+      <div class="tile">
+        <div class="tile-head"><b>الملفات</b><span class="spacer"></span><span class="dim sm" id="versionText"></span></div>
+        <p><a href="#" class="path" dir="ltr" id="dataFolder" data-folder="data"></a></p>
+        <div class="field-row">
+          <button class="btn sm" data-folder="transcripts"><svg><use href="#i-folder"/></svg>النصوص المفرّغة</button>
+          <button class="btn sm" data-folder="models"><svg><use href="#i-folder"/></svg>النماذج</button>
+          <span class="spacer"></span>
+          <button class="btn sm" id="desktopShortcut"><svg><use href="#i-link"/></svg>اختصار على سطح المكتب</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<!-- ===== الأيقونات ===== -->
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.5" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M8.5 12l1.2 5 1.3-3.5 1.3 3.5 1.2-5"/></symbol>
+  <symbol id="i-sub" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 15h4M13 15h4M7 11h10"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 9.5h5v5h-5zM9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 2.8 20 7.3v9.4L12 21.2 4 16.7V7.3z"/><path d="M12 12l8-4.7M12 12v9.2M12 12 4 7.3"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.7 0-.5-.2-.9-.5-1.2a1.7 1.7 0 0 1 1.3-2.8H16a5 5 0 0 0 5-5C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7.2" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 7v10"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7v.3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l2.5 2.5M14.5 8.5 16.5 10.5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14a6.5 6.5 0 0 1 3.5 6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
+</svg>
+
+<script src="app.js"></script>
+<script type="module" src="stage3d.js"></script>
+</body>
+</html>

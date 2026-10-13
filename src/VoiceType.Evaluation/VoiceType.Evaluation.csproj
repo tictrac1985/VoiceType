@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VoiceType.Evaluation</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VoiceType.Core\VoiceType.Core.csproj" />
+    <ProjectReference Include="..\VoiceType.Providers\VoiceType.Providers.csproj" />
+    <ProjectReference Include="..\VoiceType.Text\VoiceType.Text.csproj" />
+    <ProjectReference Include="..\VoiceType.Settings\VoiceType.Settings.csproj" />
+    <ProjectReference Include="..\VoiceType.Speech\VoiceType.Speech.csproj" />
+  </ItemGroup>
+</Project>

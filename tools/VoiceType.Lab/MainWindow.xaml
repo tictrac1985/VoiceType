@@ -1,0 +1,162 @@
+<Window x:Class="VoiceType.Lab.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VoiceType Lab — مختبر مقارنة خدمات التفريغ"
+        Width="1080" Height="760" MinWidth="820" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        FlowDirection="RightToLeft"
+        FontFamily="Segoe UI" FontSize="14"
+        Background="#F7F7F5"
+        Loaded="OnLoaded" Closing="OnClosing">
+    <DockPanel>
+        <!-- العنوان -->
+        <Border DockPanel.Dock="Top" Background="White" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="20,12">
+            <StackPanel>
+                <TextBlock Text="VoiceType Lab" FontSize="22" FontWeight="Bold" />
+                <TextBlock Text="ثلاث خطوات: نزّل نموذجًا على جهازك أو أدخل مفتاح خدمة ← سجّل بعض الجمل بصوتك ← اضغط &quot;ابدأ المقارنة&quot; لتعرف الأدق للهجتك."
+                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- شريط الحالة -->
+        <Border DockPanel.Dock="Bottom" Background="White" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0" Padding="16,6">
+            <TextBlock x:Name="StatusBarText" Foreground="{StaticResource MutedBrush}" TextTrimming="CharacterEllipsis" />
+        </Border>
+
+        <TabControl x:Name="Tabs" Margin="12" SelectionChanged="OnTabChanged">
+
+            <!-- ١. المفاتيح -->
+            <TabItem Header="١. النماذج والمفاتيح">
+                <DockPanel Margin="16">
+                    <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}"
+                               Text="طريقتان للتفريغ: (١) نموذج على جهازك: مجاني وبدون إنترنت، تنزّله مرة واحدة بزر &quot;تنزيل&quot;. (٢) خدمات عبر الإنترنت: تحتاج مفتاحًا تنسخه من موقع الخدمة ثم &quot;لصق&quot; ← &quot;حفظ واختبار&quot;. الخدمات المجانية مرتبة أولًا. المفاتيح تُحفظ مشفرة على جهازك فقط." />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Content="إضافة خدمة مخصصة من ملف…" Click="OnAddCustomProvider" />
+                        <Button Content="فتح مجلد الخدمات المخصصة" Click="OnOpenProvidersFolder" />
+                    </StackPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="KeysPanel" />
+                    </ScrollViewer>
+                </DockPanel>
+            </TabItem>
+
+            <!-- ٢. تسجيل الجمل -->
+            <TabItem Header="٢. تسجيل الجمل">
+                <Grid Margin="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <DockPanel Grid.Column="0">
+                        <TextBlock DockPanel.Dock="Top" Text="الجمل" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                            <Button Content="+ جملة جديدة" Click="OnAddSentence" Margin="0,0,0,6" />
+                            <Button Content="فتح مجلد التسجيلات" Click="OnOpenAudioFolder" />
+                        </StackPanel>
+                        <ListBox x:Name="SentenceList" SelectionChanged="OnSentenceSelected"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                    </DockPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource Hint}"
+                                   Text="اختر جملة من القائمة، واضغط &quot;تسجيل&quot; واقرأها بطريقتك الطبيعية، ثم &quot;إيقاف&quot;. إذا قلت كلامًا مختلفًا قليلًا عدّل النص ليطابق ما قلته بالضبط، واكتب الكلمات الإنجليزية بحروف إنجليزية." />
+                        <TextBlock x:Name="SentenceTitle" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <TextBox x:Name="SentenceText" FontSize="22" TextWrapping="Wrap" MinHeight="120" Padding="10"
+                                 VerticalContentAlignment="Top" LostFocus="OnSentenceTextLostFocus" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <TextBlock Text="الميكروفون:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="MicCombo" MinWidth="280" />
+                        </StackPanel>
+
+                        <ProgressBar x:Name="LevelBar" Height="10" Maximum="1" Margin="0,14,0,0" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                            <Button x:Name="RecordButton" Content="●  تسجيل" Style="{StaticResource PrimaryButton}"
+                                    FontSize="18" MinWidth="150" MinHeight="44" Click="OnRecordClick" />
+                            <Button x:Name="PlayButton" Content="▶  استماع" MinHeight="44" Click="OnPlayClick" />
+                            <Button x:Name="NextButton" Content="الجملة التالية" MinHeight="44" Click="OnNextSentence" />
+                        </StackPanel>
+
+                        <TextBlock x:Name="RecordStatus" Margin="0,12,0,0" TextWrapping="Wrap" FontSize="15" />
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <!-- ٣. المقارنة -->
+            <TabItem Header="٣. المقارنة">
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock x:Name="SamplesInfo" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <TextBlock Text="لغة الكلام:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="LanguageCombo" MinWidth="150" SelectionChanged="OnLanguageChanged" />
+                            <Button Content="تغيير مجلد التسجيلات…" Click="OnChooseAudioFolder" Margin="16,0,4,0" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="380" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <GroupBox Grid.Column="0" Header="النماذج التي ستُقارن" Padding="8">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                                    <TextBlock Text="إضافة نموذج آخر:" Foreground="{StaticResource MutedBrush}" />
+                                    <ComboBox x:Name="AddProviderCombo" Margin="0,4,0,0" />
+                                    <DockPanel Margin="0,4,0,0">
+                                        <Button DockPanel.Dock="Left" Content="إضافة" Click="OnAddModel" Margin="0" />
+                                        <TextBox x:Name="AddModelText" FlowDirection="LeftToRight" Margin="0,0,6,0"
+                                                 VerticalContentAlignment="Center" ToolTip="معرّف النموذج كما يظهر في موقع الخدمة، مثل openai/whisper-large-v3" />
+                                    </DockPanel>
+                                </StackPanel>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="ModelsPanel" />
+                                </ScrollViewer>
+                            </DockPanel>
+                        </GroupBox>
+
+                        <GroupBox Grid.Column="2" Header="النتائج (الأفضل أولًا)" Padding="8">
+                            <DataGrid x:Name="ResultsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                      CanUserAddRows="False" SelectionMode="Single" RowHeight="30">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="#" Binding="{Binding Rank}" Width="36" />
+                                    <DataGridTextColumn Header="النموذج" Binding="{Binding Label}" Width="*" />
+                                    <DataGridTextColumn Header="نسبة الخطأ ↓" Binding="{Binding Wer}" Width="95" />
+                                    <DataGridTextColumn Header="الإنجليزية ↑" Binding="{Binding Latin}" Width="90" />
+                                    <DataGridTextColumn Header="الزمن" Binding="{Binding Latency}" Width="70" />
+                                    <DataGridTextColumn Header="نجح/فشل" Binding="{Binding OkFail}" Width="75" />
+                                    <DataGridTextColumn Header="التكلفة" Binding="{Binding Cost}" Width="80" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </GroupBox>
+                    </Grid>
+
+                    <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                        <ProgressBar x:Name="CompareProgressBar" Height="12" />
+                        <TextBlock x:Name="CompareStatus" Margin="0,6,0,8" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="RunButton" Content="▶  ابدأ المقارنة" Style="{StaticResource PrimaryButton}"
+                                    FontSize="16" MinWidth="170" MinHeight="40" Click="OnRunCompare" />
+                            <Button x:Name="CancelButton" Content="إيقاف" MinHeight="40" IsEnabled="False" Click="OnCancelCompare" />
+                            <Button x:Name="OpenReportButton" Content="فتح التقرير الكامل" MinHeight="40" IsEnabled="False" Click="OnOpenReport" />
+                            <Button Content="فتح مجلد النتائج" MinHeight="40" Click="OnOpenResultsFolder" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

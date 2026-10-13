@@ -1,0 +1,27 @@
+{
+  "id": "deepgram",
+  "name": "Deepgram",
+  "pricing": "trial",
+  "pricingNote": "رصيد تجربة مجاني عند التسجيل.",
+  "description": "مثال على مزود يستقبل الصوت خامًا مع إعدادات في الـQuery ومسار نص عميق في الرد. تأكد من دعم النموذج للعربية.",
+  "website": "https://deepgram.com",
+  "keyUrl": "https://console.deepgram.com/",
+  "variables": { "base_url": "https://api.deepgram.com/v1" },
+  "models": [ { "id": "nova-3" } ],
+  "defaultModel": "nova-3",
+  "request": {
+    "url": "{base_url}/listen",
+    "auth": { "type": "header", "name": "Authorization", "prefix": "Token" },
+    "query": {
+      "model": "{model}",
+      "language": "{language}",
+      "punctuate": "true",
+      "smart_format": "true"
+    },
+    "body": { "type": "raw", "contentType": "{audio_mime}" }
+  },
+  "response": { "textPath": "results.channels[0].alternatives[0].transcript", "errorPath": "err_msg" },
+  "capabilities": {
+    "formats": [ "wav", "mp3", "flac", "ogg", "m4a", "webm", "aac", "mp4" ]
+  }
+}

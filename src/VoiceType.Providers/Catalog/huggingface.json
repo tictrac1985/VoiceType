@@ -1,0 +1,25 @@
+{
+  "id": "huggingface",
+  "name": "Hugging Face",
+  "pricing": "free-tier",
+  "pricingNote": "رصيد مجاني شهري صغير، يكفي للتجربة.",
+  "description": "أي نموذج تفريغ مستضاف على Hugging Face (اكتب معرّفه كنموذج). لـInference Endpoint خاص انظر docs/custom-provider.md.",
+  "website": "https://huggingface.co/docs/inference-providers",
+  "keyUrl": "https://huggingface.co/settings/tokens",
+  "variables": { "base_url": "https://router.huggingface.co/hf-inference/models" },
+  "models": [
+    { "id": "openai/whisper-large-v3" },
+    { "id": "openai/whisper-large-v3-turbo" }
+  ],
+  "defaultModel": "openai/whisper-large-v3",
+  "timeoutSeconds": 120,
+  "request": {
+    "url": "{base_url}/{model}",
+    "auth": { "type": "bearer" },
+    "body": { "type": "raw", "contentType": "{audio_mime}" }
+  },
+  "response": { "textPath": "text", "errorPath": "error" },
+  "capabilities": {
+    "formats": [ "wav", "mp3", "flac", "ogg", "m4a", "webm" ]
+  }
+}

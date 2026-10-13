@@ -1,0 +1,29 @@
+{
+  "id": "elevenlabs",
+  "name": "ElevenLabs Scribe",
+  "pricing": "paid",
+  "pricingNote": "قد تتوفر خطة مجانية محدودة، تحقق من الموقع.",
+  "description": "تفريغ متعدد اللغات من ElevenLabs. المصادقة عبر Header باسم xi-api-key.",
+  "website": "https://elevenlabs.io/speech-to-text",
+  "keyUrl": "https://elevenlabs.io/app/settings/api-keys",
+  "variables": { "base_url": "https://api.elevenlabs.io/v1" },
+  "models": [ { "id": "scribe_v1" } ],
+  "defaultModel": "scribe_v1",
+  "timeoutSeconds": 90,
+  "request": {
+    "url": "{base_url}/speech-to-text",
+    "auth": { "type": "header", "name": "xi-api-key" },
+    "body": {
+      "type": "multipart",
+      "fileField": "file",
+      "fields": {
+        "model_id": "{model}",
+        "language_code": "{language}"
+      }
+    }
+  },
+  "response": { "textPath": "text", "errorPath": "detail.message" },
+  "capabilities": {
+    "formats": [ "wav", "mp3", "flac", "ogg", "m4a", "webm", "aac", "mp4" ]
+  }
+}

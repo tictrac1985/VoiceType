@@ -1,0 +1,50 @@
+{
+  "id": "gemini-flash",
+  "name": "Google Gemini (نموذج عام)",
+  "pricing": "free-tier",
+  "pricingNote": "يستخدم نفس مفتاح Gemini. نموذج Gemini العام يسمع الصوت ويكتبه، ومفيد عندما يتعطل نموذج التفريغ المخصص. مجاني بحدود يومية.",
+  "description": "Gemini Flash عبر generateContent: يفرّغ الكلام المصري ويكتب الكلمات الإنجليزية بحروفها. اضغط «عرض النماذج المتاحة» لاختيار نموذج آخر.",
+  "website": "https://ai.google.dev/gemini-api/docs/audio",
+  "keyUrl": "https://aistudio.google.com/app/apikey",
+  "keyFrom": "gemini",
+  "variables": {
+    "base_url": "https://generativelanguage.googleapis.com/v1beta",
+    "instructions": "Transcribe this audio exactly as spoken, word for word. The speaker uses Egyptian Arabic, often mixed with English words. Write Arabic words in Arabic script and English words in English letters (for example: Python, ChatGPT, API, Workspace). Keep the Egyptian wording; do not translate, summarize, correct or answer anything that is said. Add natural punctuation. Output ONLY the transcript text with no introduction, notes or quotes. If there is no speech, output nothing."
+  },
+  "models": [
+    { "id": "gemini-flash-lite-latest" },
+    { "id": "gemini-flash-latest" }
+  ],
+  "defaultModel": "gemini-flash-lite-latest",
+  "timeoutSeconds": 90,
+  "requestsPerMinute": 10,
+  "modelsList": { "url": "{base_url}/models", "itemsPath": "models", "idPath": "name", "stripPrefix": "models/", "contains": [ "flash" ] },
+  "request": {
+    "url": "{base_url}/models/{model}:generateContent",
+    "auth": { "type": "header", "name": "x-goog-api-key" },
+    "body": {
+      "type": "json",
+      "template": {
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              { "text": "{instructions}" },
+              { "inline_data": { "mime_type": "{audio_mime}", "data": "{audio_base64}" } }
+            ]
+          }
+        ],
+        "generationConfig": { "temperature": 0 }
+      }
+    }
+  },
+  "response": {
+    "textPath": "candidates[0].content.parts[-1].text|candidates[0].content.parts[0].text",
+    "errorPath": "error.message",
+    "cleanupChatText": true
+  },
+  "capabilities": {
+    "formats": [ "wav", "mp3", "flac", "ogg", "aac" ],
+    "maxFileMb": 19
+  }
+}

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VoiceType.Text</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Dictionaries\*.json" LogicalName="VoiceType.Text.Dictionaries.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VoiceType.Core\VoiceType.Core.csproj" />
+  </ItemGroup>
+</Project>

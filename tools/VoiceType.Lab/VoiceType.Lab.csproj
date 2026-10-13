@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    VoiceType Lab: برنامج بواجهة عربية لإدخال المفاتيح وتسجيل جمل الاختبار ومقارنة المزودات (المرحلة 0).
+    يُبنى كملف exe واحد، ويحتاج .NET Desktop Runtime 10 على الجهاز.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>VoiceType.Lab</RootNamespace>
+    <AssemblyName>VoiceTypeLab</AssemblyName>
+    <Product>VoiceType Lab</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VoiceType.Core\VoiceType.Core.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Providers\VoiceType.Providers.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Text\VoiceType.Text.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Evaluation\VoiceType.Evaluation.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Settings\VoiceType.Settings.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Speech\VoiceType.Speech.csproj" />
+  </ItemGroup>
+</Project>

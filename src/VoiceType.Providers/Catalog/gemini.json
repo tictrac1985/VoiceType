@@ -1,0 +1,123 @@
+{
+  "id": "gemini",
+  "name": "Google Gemini Transcribe",
+  "pricing": "free-tier",
+  "pricingNote": "خطة مجانية بحدود يومية. في الخطة المجانية قد تستخدم Google المحتوى لتحسين خدماتها.",
+  "description": "نموذج Google المخصص للتفريغ. يدعم العربية المصرية (ar-EG) والكلام المختلط بالإنجليزية.",
+  "website": "https://ai.google.dev/gemini-api/docs/transcribe",
+  "keyUrl": "https://aistudio.google.com/app/apikey",
+  "variables": {
+    "base_url": "https://generativelanguage.googleapis.com/v1beta",
+    "language_code": "ar-EG"
+  },
+  "models": [
+    {
+      "id": "gemini-3.5-transcribe"
+    }
+  ],
+  "defaultModel": "gemini-3.5-transcribe",
+  "timeoutSeconds": 120,
+  "requestsPerMinute": 8,
+  "modelsList": {
+    "url": "{base_url}/models",
+    "itemsPath": "models",
+    "idPath": "name",
+    "stripPrefix": "models/",
+    "contains": [
+      "transcribe"
+    ]
+  },
+  "request": {
+    "url": "{base_url}/interactions",
+    "auth": {
+      "type": "header",
+      "name": "x-goog-api-key"
+    },
+    "body": {
+      "type": "json",
+      "template": {
+        "model": "{model}",
+        "input": [
+          {
+            "type": "audio",
+            "data": "{audio_base64}",
+            "mime_type": "{audio_mime}"
+          }
+        ],
+        "generation_config": {
+          "transcription_config": {
+            "mode": {
+              "type": "verbatim"
+            },
+            "language_codes": [
+              "{language_code}"
+            ],
+            "custom_vocabulary": [
+              "API",
+              "Python",
+              "JavaScript",
+              "ChatGPT",
+              "Gemini",
+              "Claude",
+              "OpenAI",
+              "OpenRouter",
+              "GitHub",
+              "VS Code",
+              "JSON",
+              "PDF",
+              "Excel",
+              "Word",
+              "PowerPoint",
+              "Gmail",
+              "Google Drive",
+              "Workspace",
+              "Zoom",
+              "WhatsApp",
+              "email",
+              "meeting",
+              "bug",
+              "commit",
+              "deploy",
+              "server",
+              "database",
+              "app",
+              "link",
+              "online",
+              "update",
+              "file",
+              "folder",
+              "settings"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "response": {
+    "textPath": "output_text|steps[-1].content[0].text|steps[0].content[0].text",
+    "errorPath": "error.message",
+    "polling": {
+      "statusPath": "status",
+      "idPath": "id",
+      "url": "{base_url}/{id}",
+      "pending": [
+        "in_progress",
+        "queued",
+        "pending",
+        "processing"
+      ]
+    }
+  },
+  "capabilities": {
+    "formats": [
+      "wav",
+      "mp3",
+      "flac",
+      "ogg",
+      "m4a",
+      "webm",
+      "aac"
+    ],
+    "maxFileMb": 19
+  }
+}

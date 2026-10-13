@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    أداة سطر أوامر للمطور وللوكيل البرمجي: إدارة المفاتيح والنماذج والمزودات وتشغيل المقارنة.
+    تشارك نفس الإعدادات والمفاتيح مع برنامج VoiceType Lab.
+    ليست جزءًا من تطبيق VoiceType الذي يستخدمه المستخدم العادي.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>VoiceType.Cli</RootNamespace>
+    <AssemblyName>voicetype-cli</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VoiceType.Core\VoiceType.Core.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Providers\VoiceType.Providers.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Text\VoiceType.Text.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Evaluation\VoiceType.Evaluation.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Settings\VoiceType.Settings.csproj" />
+    <ProjectReference Include="..\..\src\VoiceType.Speech\VoiceType.Speech.csproj" />
+  </ItemGroup>
+</Project>

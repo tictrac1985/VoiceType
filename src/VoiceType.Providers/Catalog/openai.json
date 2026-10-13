@@ -1,0 +1,39 @@
+{
+  "id": "openai",
+  "name": "OpenAI",
+  "pricing": "paid",
+  "pricingNote": "يحتاج رصيدًا مدفوعًا.",
+  "description": "نماذج التفريغ من OpenAI. صيغة هذا الـAPI هي المرجع لمعظم المزودات المتوافقة.",
+  "website": "https://platform.openai.com",
+  "keyUrl": "https://platform.openai.com/api-keys",
+  "variables": { "base_url": "https://api.openai.com/v1" },
+  "models": [
+    { "id": "gpt-4o-transcribe" },
+    { "id": "gpt-4o-mini-transcribe" },
+    { "id": "whisper-1" }
+  ],
+  "defaultModel": "gpt-4o-transcribe",
+  "timeoutSeconds": 90,
+  "modelsList": {"url": "{base_url}/models", "itemsPath": "data", "idPath": "id", "contains": ["transcribe", "whisper"]},
+  "request": {
+    "url": "{base_url}/audio/transcriptions",
+    "auth": { "type": "bearer" },
+    "body": {
+      "type": "multipart",
+      "fileField": "file",
+      "fields": {
+        "model": "{model}",
+        "language": "{language}",
+        "prompt": "{prompt}",
+        "temperature": "{temperature}",
+        "response_format": "json"
+      }
+    }
+  },
+  "response": { "textPath": "text", "errorPath": "error.message" },
+  "capabilities": {
+    "formats": [ "flac", "mp3", "mp4", "m4a", "ogg", "wav", "webm" ],
+    "maxFileMb": 25,
+    "supportsPrompt": true
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "id": "openrouter",
+  "name": "OpenRouter",
+  "pricing": "paid",
+  "pricingNote": "نماذج التفريغ المتخصصة هنا مدفوعة (تحتاج شحن رصيد). للنماذج المجانية استخدم «OpenRouter — نماذج مجانية» بنفس المفتاح.",
+  "description": "مفتاح واحد لعشرات نماذج التفريغ (OpenAI، Mistral Voxtral، Qwen3-ASR، Google Chirp، Deepgram، AssemblyAI...). انسخ معرّف النموذج من openrouter.ai/collections/speech-to-text-models",
+  "website": "https://openrouter.ai",
+  "keyUrl": "https://openrouter.ai/settings/keys",
+  "variables": {
+    "base_url": "https://openrouter.ai/api/v1"
+  },
+  "models": [
+    {
+      "id": "openai/whisper-large-v3"
+    },
+    {
+      "id": "openai/whisper-large-v3-turbo"
+    },
+    {
+      "id": "openai/gpt-4o-transcribe"
+    }
+  ],
+  "defaultModel": "openai/whisper-large-v3",
+  "timeoutSeconds": 90,
+  "request": {
+    "url": "{base_url}/audio/transcriptions",
+    "auth": {
+      "type": "bearer"
+    },
+    "headers": {
+      "X-Title": "VoiceType"
+    },
+    "body": {
+      "type": "json",
+      "template": {
+        "model": "{model}",
+        "language": "{language}",
+        "temperature": "{temperature:number}",
+        "input_audio": {
+          "data": "{audio_base64}",
+          "format": "{audio_format}"
+        }
+      }
+    }
+  },
+  "response": {
+    "textPath": "text",
+    "errorPath": "error.message",
+    "costPath": "usage.cost"
+  },
+  "capabilities": {
+    "formats": [
+      "wav",
+      "mp3",
+      "flac",
+      "m4a",
+      "ogg",
+      "webm",
+      "aac"
+    ]
+  },
+  "modelsList": {
+    "url": "{base_url}/models?output_modalities=transcription",
+    "itemsPath": "data",
+    "idPath": "id"
+  }
+}

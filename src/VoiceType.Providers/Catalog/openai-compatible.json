@@ -1,0 +1,27 @@
+{
+  "id": "openai-compatible",
+  "name": "OpenAI-compatible (مخصص)",
+  "pricing": "free",
+  "pricingNote": "حسب الخادم الذي تستخدمه.",
+  "description": "أي خدمة أو خادم محلي يطبق /audio/transcriptions بصيغة OpenAI. غيّر base_url فقط.",
+  "variables": { "base_url": "http://localhost:8000/v1" },
+  "models": [],
+  "modelsList": {"url": "{base_url}/models", "itemsPath": "data", "idPath": "id"},
+  "request": {
+    "url": "{base_url}/audio/transcriptions",
+    "auth": { "type": "bearer", "optional": true },
+    "body": {
+      "type": "multipart",
+      "fileField": "file",
+      "fields": {
+        "model": "{model}",
+        "language": "{language}",
+        "prompt": "{prompt}",
+        "temperature": "{temperature}",
+        "response_format": "json"
+      }
+    }
+  },
+  "response": { "textPath": "text", "errorPath": "error.message" },
+  "capabilities": { "supportsPrompt": true }
+}

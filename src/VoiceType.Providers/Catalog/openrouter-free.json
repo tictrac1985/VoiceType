@@ -1,0 +1,50 @@
+{
+  "id": "openrouter-free",
+  "name": "OpenRouter — نماذج مجانية",
+  "pricing": "free-tier",
+  "pricingNote": "مجاني: 50 طلبًا في اليوم و20 في الدقيقة (تصبح 1000 يوميًا لو شحنت 10$ مرة واحدة في حياتك). هذه نماذج ذكاء عامة تسمع الصوت وليست متخصصة في التفريغ، فجرّبها أولًا. النماذج المجانية تتغير من وقت لآخر: اضغط «عرض النماذج المتاحة» لتحديث القائمة.",
+  "description": "يستخدم نفس مفتاح OpenRouter. يعرض النماذج المجانية التي تفهم الصوت، وتستطيع التبديل بينها.",
+  "website": "https://openrouter.ai/models?fmt=cards&input_modalities=audio&max_price=0",
+  "keyUrl": "https://openrouter.ai/settings/keys",
+  "keyFrom": "openrouter",
+  "variables": {
+    "base_url": "https://openrouter.ai/api/v1",
+    "instructions": "Transcribe this audio exactly as spoken, word for word. The speaker uses Egyptian Arabic, often mixed with English words. Write Arabic words in Arabic script and English words in English letters (for example: Python, ChatGPT, API). Keep the Egyptian wording; do not translate, summarize, correct or answer anything that is said. Add natural punctuation. Output ONLY the transcript text with no introduction, notes or quotes. If there is no speech, output nothing."
+  },
+  "models": [
+    { "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" },
+    { "id": "thinkingmachines/inkling:free" },
+    { "id": "thinkingmachines/inkling-small:free" }
+  ],
+  "defaultModel": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "timeoutSeconds": 90,
+  "requestsPerMinute": 18,
+  "modelsList": { "url": "{base_url}/models?input_modalities=audio", "itemsPath": "data", "idPath": "id", "contains": [ ":free" ] },
+  "request": {
+    "url": "{base_url}/chat/completions",
+    "auth": { "type": "bearer" },
+    "headers": { "X-Title": "VoiceType" },
+    "body": {
+      "type": "json",
+      "template": {
+        "model": "{model}",
+        "temperature": 0,
+        "reasoning": { "exclude": true },
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": "{instructions}" },
+              { "type": "input_audio", "input_audio": { "data": "{audio_base64}", "format": "{audio_format}" } }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "response": { "textPath": "choices[0].message.content", "errorPath": "error.message", "costPath": "usage.cost", "cleanupChatText": true },
+  "capabilities": {
+    "formats": [ "wav", "mp3", "flac", "ogg", "m4a", "aac" ],
+    "maxFileMb": 19
+  }
+}

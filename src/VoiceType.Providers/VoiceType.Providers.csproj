@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>VoiceType.Providers</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\VoiceType.Core\VoiceType.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- التعريفات المدمجة للمزودات: نفس صيغة المزود المخصص تمامًا -->
+    <EmbeddedResource Include="Catalog\*.json" LogicalName="VoiceType.Providers.Catalog.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="VoiceType.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,38 @@
+{
+  "id": "groq",
+  "name": "Groq",
+  "pricing": "free-tier",
+  "pricingNote": "خطة مجانية بحدود يومية كبيرة، بدون دفع.",
+  "description": "يشغّل Whisper Large-v3 و Turbo بسرعة عالية جدًا. متوافق مع OpenAI.",
+  "website": "https://console.groq.com",
+  "keyUrl": "https://console.groq.com/keys",
+  "variables": { "base_url": "https://api.groq.com/openai/v1" },
+  "models": [
+    { "id": "whisper-large-v3-turbo" },
+    { "id": "whisper-large-v3" }
+  ],
+  "defaultModel": "whisper-large-v3-turbo",
+  "requestsPerMinute": 18,
+  "modelsList": {"url": "{base_url}/models", "itemsPath": "data", "idPath": "id", "contains": ["whisper"]},
+  "request": {
+    "url": "{base_url}/audio/transcriptions",
+    "auth": { "type": "bearer" },
+    "body": {
+      "type": "multipart",
+      "fileField": "file",
+      "fields": {
+        "model": "{model}",
+        "language": "{language}",
+        "prompt": "{prompt}",
+        "temperature": "{temperature}",
+        "response_format": "json"
+      }
+    }
+  },
+  "response": { "textPath": "text", "errorPath": "error.message" },
+  "capabilities": {
+    "formats": [ "flac", "mp3", "mp4", "m4a", "ogg", "wav", "webm" ],
+    "maxFileMb": 25,
+    "supportsPrompt": true
+  }
+}
