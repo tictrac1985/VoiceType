@@ -369,6 +369,11 @@ public sealed class DictationController : IDisposable
             {
                 inserted = false;
             }
+            else if (!inserted)
+            {
+                DictationLog.Write(duration, TimeSpan.Zero, result?.EngineId, [],
+                    $"insert failed: {TextInjector.LastFailure} app={TextInjector.LastFailureApp ?? "-"}");
+            }
 
             var item = new HistoryItem(_nextId++, DateTime.Now, text, engineName, inserted, duration.TotalSeconds, note);
             _history.Insert(0, item);
@@ -382,7 +387,7 @@ public sealed class DictationController : IDisposable
             {
                 var failedName = result is { PreviousFailures.Count: > 0 } ? ProviderName(result.PreviousFailures[0].EngineId) : null;
                 Notice?.Invoke(
-                    !inserted ? "النص محفوظ في السجل، تعذّرت كتابته في البرنامج الحالي."
+                    !inserted ? TextInjector.FailureMessage
                     : remainderFailed ? "انقطع الاتصال، فلم يُكتب آخر جزء من الكلام."
                     : usedFallback ? $"✓ كُتب بـ{ShortEngine(engineName)} — {failedName} لم يعمل" : "✓ تمت الكتابة",
                     !inserted || remainderFailed);
@@ -671,6 +676,7 @@ public sealed class DictationController : IDisposable
         string? title = null;
         if (target == DictationTarget.ActiveApp)
         {
+            TextInjector.CaptureTarget();
             process = TextInjector.ForegroundProcessName();
             title = TextInjector.ForegroundTitle();
             if (process is not null && !string.Equals(process, "VoiceType", StringComparison.OrdinalIgnoreCase))

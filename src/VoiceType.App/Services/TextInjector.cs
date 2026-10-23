@@ -37,11 +37,12 @@ public static class TextInjector
     };
 
     /// <summary>اسم البرنامج الذي عليه التركيز الآن (مثل WINWORD أو chrome).</summary>
-    public static string? ForegroundProcessName()
+    public static string? ForegroundProcessName() => ProcessNameOf(GetForegroundWindow());
+
+    private static string? ProcessNameOf(nint window)
     {
         try
         {
-            var window = GetForegroundWindow();
             if (window == 0 || GetWindowThreadProcessId(window, out var pid) == 0 || pid == 0)
             {
                 return null;
@@ -61,6 +62,161 @@ public static class TextInjector
         FixMixedDirection && (processName is null || !CodeApps.Contains(processName))
             ? VoiceType.Text.BidiFormatter.Apply(text)
             : VoiceType.Text.BidiFormatter.Strip(text);
+    public enum InsertFailure
+    {
+        None,
+        Clipboard,
+        Elevated,
+        NoTarget,
+        Blocked,
+    }
+
+    /// <summary>سبب آخر فشل في الكتابة (لرسالة واضحة للمستخدم وللسجل).</summary>
+    public static InsertFailure LastFailure { get; private set; }
+
+    /// <summary>اسم البرنامج الذي فشلت الكتابة فيه (للسجل).</summary>
+    public static string? LastFailureApp { get; private set; }
+
+    public static string FailureMessage => LastFailure switch
+    {
+        InsertFailure.Elevated => "البرنامج ده شغال كمسؤول (Administrator)، وWindows مش بيسمح لصدى يكتب فيه. الكلام اتنسخ: اضغط Ctrl+V.",
+        InsertFailure.NoTarget => "مفيش مكان كتابة مفتوح. الكلام اتنسخ: اضغط Ctrl+V في المكان اللي عاوزه.",
+        _ => "تعذّرت الكتابة في البرنامج الحالي. الكلام اتنسخ: اضغط Ctrl+V.",
+    };
+
+    // النافذة التي كان المستخدم يكتب فيها لحظة بدء الإملاء
+    private static nint _target;
+
+    private static readonly bool SelfElevated = IsSelfElevated();
+
+    /// <summary>
+    /// يحفظ البرنامج الذي يكتب فيه المستخدم لحظة بدء الإملاء. لو أخذت نافذة من نوافذ صدى أو شريط المهام
+    /// التركيز أثناء الكلام، نرجع لهذا البرنامج قبل اللصق.
+    /// </summary>
+    public static void CaptureTarget()
+    {
+        var window = GetForegroundWindow();
+        _target = IsOwnOrShell(window) ? 0 : window;
+    }
+
+    /// <summary>نوافذ صدى نفسه أو سطح المكتب وشريط المهام: لا يُكتب فيها.</summary>
+    private static bool IsOwnOrShell(nint window)
+    {
+        if (window == 0)
+        {
+            return true;
+        }
+
+        if (GetWindowThreadProcessId(window, out var pid) != 0 && pid == (uint)Environment.ProcessId)
+        {
+            return true;
+        }
+
+        var buffer = new char[64];
+        var length = GetClassName(window, buffer, buffer.Length);
+        var cls = length > 0 ? new string(buffer, 0, length) : string.Empty;
+        return cls is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "Progman" or "WorkerW" or "NotifyIconOverflowWindow"
+            or "TopLevelWindowForOverflowXamlIsland" or "Windows.UI.Core.CoreWindow";
+    }
+
+    /// <summary>النافذة التي سيُلصق فيها: الحالية إن كانت برنامجًا عاديًا، وإلا نُرجع البرنامج الذي بدأ فيه الإملاء.</summary>
+    private static async Task<nint> EnsureTargetAsync()
+    {
+        var current = GetForegroundWindow();
+        if (!IsOwnOrShell(current))
+        {
+            return current;
+        }
+
+        var target = _target;
+        if (target == 0 || !IsWindow(target))
+        {
+            return 0;
+        }
+
+        if (IsIconic(target))
+        {
+            ShowWindow(target, SW_RESTORE);
+        }
+
+        // ضغطة Alt وهمية (ضغط ثم رفع قبل نقل التركيز) تسمح لـ Windows بإعطاء التركيز لبرنامج آخر
+        var alt = new[] { Key(VK_MENU, false), Key(VK_MENU, true) };
+        SendInput((uint)alt.Length, alt, Marshal.SizeOf<INPUT>());
+        SetForegroundWindow(target);
+        for (var i = 0; i < 6; i++)
+        {
+            await Task.Delay(40);
+            current = GetForegroundWindow();
+            if (current == target)
+            {
+                await Task.Delay(60); // يعطي البرنامج لحظة ليرجع مؤشر الكتابة
+                return target;
+            }
+        }
+
+        return IsOwnOrShell(current) ? 0 : current;
+    }
+
+    /// <summary>
+    /// البرامج المفتوحة «كمسؤول» لا يسمح Windows لبرنامج عادي بالكتابة فيها (UIPI)، واللصق يضيع بصمت.
+    /// </summary>
+    private static bool IsElevated(nint window)
+    {
+        if (SelfElevated || GetWindowThreadProcessId(window, out var pid) == 0 || pid == 0)
+        {
+            return false;
+        }
+
+        var process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (process == 0)
+        {
+            return Marshal.GetLastPInvokeError() == ERROR_ACCESS_DENIED;
+        }
+
+        try
+        {
+            if (!OpenProcessToken(process, TOKEN_QUERY, out var token))
+            {
+                return Marshal.GetLastPInvokeError() == ERROR_ACCESS_DENIED;
+            }
+
+            try
+            {
+                return GetTokenInformation(token, TokenElevation, out var elevated, sizeof(int), out _) && elevated != 0;
+            }
+            finally
+            {
+                CloseHandle(token);
+            }
+        }
+        finally
+        {
+            CloseHandle(process);
+        }
+    }
+
+    private static bool IsSelfElevated()
+    {
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>لما تتعذر الكتابة: نترك الكلام في الحافظة (بدون إعادة القديم) حتى يلصقه المستخدم بنفسه.</summary>
+    private static bool Fail(InsertFailure reason, string text, string? process)
+    {
+        LastFailure = reason;
+        LastFailureApp = process;
+        TrySetClipboard(CreateDataObject(PrepareForTarget(text, process), privateCopy: false));
+        return false;
+    }
+
     /// <summary>ما كُتب (لأوامر «امسح آخر جملة» و«امسح الكل»): رقم الإملاء، والنافذة، والوقت.</summary>
     public sealed record Insertion(int Dictation, nint Window, DateTime Time);
 
@@ -118,9 +274,21 @@ public static class TextInjector
             return false;
         }
 
+        LastFailure = InsertFailure.None;
         await WaitForModifiersReleasedAsync();
 
-        var process = ForegroundProcessName();
+        var window = await EnsureTargetAsync();
+        if (window == 0)
+        {
+            return Fail(InsertFailure.NoTarget, text, null);
+        }
+
+        var process = ProcessNameOf(window);
+        if (IsElevated(window))
+        {
+            return Fail(InsertFailure.Elevated, text, process);
+        }
+
         var startRight = ArabicStartsRight && process is not null && RtlShortcutApps.Contains(process)
                          && VoiceType.Text.BidiFormatter.StartsRightToLeft(text) && !CtrlShiftSwitchesLanguage();
         text = PrepareForTarget(text, process);
@@ -145,6 +313,8 @@ public static class TextInjector
 
         if (!TrySetClipboard(CreateDataObject(text)))
         {
+            LastFailure = InsertFailure.Clipboard;
+            LastFailureApp = process;
             return false;
         }
 
@@ -154,7 +324,13 @@ public static class TextInjector
             _batchSequence = ourClipboard;
         }
         await Task.Delay(40);
-        SendCtrlV();
+        if (SendCtrlV() == 0)
+        {
+            // Windows رفض الضغطات (برنامج محمي): الكلام يبقى في الحافظة للصق اليدوي
+            LastFailure = InsertFailure.Blocked;
+            LastFailureApp = process;
+            return false;
+        }
 
         if (backup is not null)
         {
@@ -380,16 +556,19 @@ public static class TextInjector
         SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
-    private static void SendCtrlV()
+    private static uint SendCtrlV()
     {
+        // مع رمز المفتاح الفعلي (scan code): بعض البرامج (Electron، Java، الطرفيات) تتجاهل الضغطات بدونه
+        var ctrl = (ushort)MapVirtualKey(VK_CONTROL, 0);
+        var v = (ushort)MapVirtualKey(VK_V, 0);
         var inputs = new[]
         {
-            Key(VK_CONTROL, false),
-            Key(VK_V, false),
-            Key(VK_V, true),
-            Key(VK_CONTROL, true),
+            Key(VK_CONTROL, false, scan: ctrl),
+            Key(VK_V, false, scan: v),
+            Key(VK_V, true, scan: v),
+            Key(VK_CONTROL, true, scan: ctrl),
         };
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
     private static INPUT Key(ushort vk, bool up, bool extended = false, ushort scan = 0) => new()

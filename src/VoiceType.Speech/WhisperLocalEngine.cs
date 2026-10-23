@@ -41,6 +41,19 @@ public sealed class WhisperLocalEngine : ISpeechEngine, ISegmentedSpeechEngine, 
         SupportsPrompt = true,
     };
 
+    /// <summary>عدد الاحتمالات التي يجربها النموذج لكل جملة في وضع الدقة (نفس إعداد Vibe الافتراضي).</summary>
+    public const int AccurateBeamSize = 5;
+
+    /// <summary>هل يعمل التفريغ على كرت الشاشة (Vulkan / CUDA)؟</summary>
+    public static bool IsGpuRuntime => RuntimeOptions.LoadedLibrary is RuntimeLibrary.Vulkan or RuntimeLibrary.Cuda or RuntimeLibrary.Cuda12;
+
+    /// <summary>
+    /// البحث الأدق (beam search): يجرب عدة احتمالات للجملة ويختار الأرجح، فيقل الخلط في العامية المصرية والكلمات الإنجليزية.
+    /// أبطأ من الطريقة العادية، لذلك يُستخدم للملفات دائمًا وللإملاء على كرت الشاشة فقط.
+    /// </summary>
+    internal static WhisperProcessorBuilder WithDecoding(WhisperProcessorBuilder builder, bool accurate) =>
+        accurate ? builder.WithBeamSearchSamplingStrategy(beam => beam.WithBeamSize(AccurateBeamSize)) : builder;
+
     /// <summary>طبقة التشغيل التي حُمّلت فعلًا (Vulkan / Cpu ...)، بعد أول تفريغ.</summary>
     public static string? LoadedRuntime => RuntimeOptions.LoadedLibrary?.ToString();
 
@@ -95,6 +108,8 @@ public sealed class WhisperLocalEngine : ISpeechEngine, ISegmentedSpeechEngine, 
 
             var builder = factory.CreateBuilder()
                 .WithThreads(Math.Clamp(Environment.ProcessorCount - 2, 1, 16));
+            // على كرت الشاشة نستخدم البحث الأدق (beam search) مثل برنامج Vibe؛ على المعالج نبقى على الأسرع
+            builder = WithDecoding(builder, accurate: IsGpuRuntime);
             builder = string.IsNullOrWhiteSpace(options.Language)
                 ? builder.WithLanguageDetection()
                 : builder.WithLanguage(options.Language.Trim());
@@ -151,6 +166,8 @@ public sealed class WhisperLocalEngine : ISpeechEngine, ISegmentedSpeechEngine, 
             var builder = factory.CreateBuilder()
                 .WithThreads(Math.Clamp(Environment.ProcessorCount - 2, 1, 16))
                 .WithProgressHandler(percent => progress?.Report(percent / 100.0));
+            // تفريغ الملفات: الدقة أهم من السرعة، فنستخدم دائمًا البحث الأدق
+            builder = WithDecoding(builder, accurate: true);
             builder = string.IsNullOrWhiteSpace(options.Language)
                 ? builder.WithLanguageDetection()
                 : builder.WithLanguage(options.Language.Trim());
