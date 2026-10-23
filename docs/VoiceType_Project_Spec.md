@@ -1,10 +1,16 @@
 # VoiceType — مشروع مساعد الإملاء الصوتي لـ Windows
 
-**إصدار الخطة: 2.15 — أكتوبر 2026**
+**إصدار الخطة: 2.16 — أكتوبر 2026**
 
 ---
 
 ## 0. سجل التغييرات
+
+### الإصدار 2.16
+
+- أسماء النماذج المحلية في صدى بقت فيها درجة الضغط زي Vibe، علشان نفس الملف يبان بنفس الاسم في البرنامجين: «Whisper Large-v3 Q5 (الأدق للعربي)» = `ggml-large-v3-q5_0.bin` (اللي Vibe بيسميه Large Q5)، و«Whisper Turbo Q5»، و«Whisper Turbo Q8».
+- على المكتبي: Vibe كان بيحط نماذجه في `%LOCALAPPDATA%\github.com.thewh1teagle.vibe` من غير `models_folder`. اتنقلت كل النماذج (بتاعة Vibe وبتاعة صدى) لـ `D:\VibeModels`، واتظبط `models_folder` و `model.path` في إعدادات Vibe، مع نسخة احتياطية `app_config.json.bak-before-shared-models`.
+- ملاحظة 23 أكتوبر: `gemini-3.5-transcribe` بيرجع HTTP 503 «high demand» على المفتاحين. ده ضغط مؤقت عند Google، والبرنامج بيكمّل بالنموذج المحلي زي ما المفروض.
 
 ### الإصدار 2.15
 

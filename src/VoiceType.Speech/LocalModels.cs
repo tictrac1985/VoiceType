@@ -23,11 +23,11 @@ public static class LocalModels
 
     public static IReadOnlyList<LocalModelInfo> Suggested { get; } =
     [
-        new("ggml-large-v3-q5_0.bin", "Whisper Large-v3 (الأدق للعربي)", 1081,
+        new("ggml-large-v3-q5_0.bin", "Whisper Large-v3 Q5 (الأدق للعربي)", 1081,
             "الأفضل للعامية المصرية والعربي المخلوط بالإنجليزي. هو المقترح كنموذج احتياطي.", BaseUrl + "ggml-large-v3-q5_0.bin", Recommended: true),
-        new("ggml-large-v3-turbo-q5_0.bin", "Whisper Turbo (سريع وخفيف)", 574,
+        new("ggml-large-v3-turbo-q5_0.bin", "Whisper Turbo Q5 (سريع وخفيف)", 574,
             "أسرع وأصغر، لكنه أضعف في العامية المصرية. مناسب للأجهزة الضعيفة أو للإنجليزي.", BaseUrl + "ggml-large-v3-turbo-q5_0.bin"),
-        new("ggml-large-v3-turbo-q8_0.bin", "Whisper Turbo (q8)", 874,
+        new("ggml-large-v3-turbo-q8_0.bin", "Whisper Turbo Q8", 874,
             "نسخة Turbo بضغط أقل. في العربي المصري غالبًا أضعف من Large-v3.", BaseUrl + "ggml-large-v3-turbo-q8_0.bin"),
         new("ggml-large-v3-turbo.bin", "Whisper Turbo (كامل)", 1620,
             "Turbo بدون ضغط. حجم كبير وتحسن بسيط؛ Large-v3 أفضل منه في العربي.", BaseUrl + "ggml-large-v3-turbo.bin"),
