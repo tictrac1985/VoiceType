@@ -33,19 +33,32 @@ public static class LocalModels
             "Turbo بدون ضغط. حجم كبير وتحسن بسيط؛ Large-v3 أفضل منه في العربي.", BaseUrl + "ggml-large-v3-turbo.bin"),
     ];
 
-    /// <summary>مجلد النماذج الجديد (داخل مجلد البرنامج).</summary>
-    public static string Folder => AppPaths.Models;
+    /// <summary>
+    /// مكان تنزيل النماذج الجديدة: المجلد المشترك مع Vibe إن وُجد (حتى لا تتكرر)، وإلا data\models بجوار البرنامج.
+    /// </summary>
+    public static string Folder => AppPaths.SharedModels ?? AppPaths.Models;
 
-    /// <summary>كل الأماكن التي قد توجد بها نماذج (الجديد أولًا ثم القديم).</summary>
-    public static IReadOnlyList<string> SearchFolders =>
+    /// <summary>مجلدات صدى نفسه (يُحذف منها فقط؛ المجلد المشترك ملك Vibe أيضًا).</summary>
+    private static IReadOnlyList<string> OwnFolders =>
         new[] { AppPaths.Models, AppPaths.LegacyModels }
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-    /// <summary>مسار النموذج إن كان موجودًا في أي مكان، وإلا المسار الجديد الذي سيُنزّل إليه.</summary>
+    /// <summary>كل الأماكن التي قد توجد بها نماذج: المشترك أولًا، ثم مجلد صدى، ثم القديم.</summary>
+    public static IReadOnlyList<string> SearchFolders =>
+        new[] { AppPaths.SharedModels, AppPaths.Models, AppPaths.LegacyModels }
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>مسار النموذج إن كان موجودًا في أي مكان، وإلا المسار الذي سيُنزّل إليه.</summary>
     public static string PathOf(string fileName) =>
         SearchFolders.Select(folder => System.IO.Path.Combine(folder, fileName)).FirstOrDefault(File.Exists)
         ?? System.IO.Path.Combine(Folder, fileName);
+
+    /// <summary>هل النموذج موجود في المجلد المشترك مع Vibe؟</summary>
+    public static bool IsShared(string fileName) =>
+        AppPaths.SharedModels is { } shared && File.Exists(System.IO.Path.Combine(shared, fileName));
 
     public static bool IsInstalled(string fileName) =>
         SearchFolders.Any(folder => File.Exists(System.IO.Path.Combine(folder, fileName)));
@@ -57,9 +70,18 @@ public static class LocalModels
             .SelectMany(folder => Directory.EnumerateFiles(folder, "*.bin"))
             .Select(System.IO.Path.GetFileName)
             .OfType<string>()
+            .Where(IsTranscriptionModel)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    /// <summary>
+    /// ملفات .bin ليست كلها نماذج تفريغ: Vibe يضع في نفس المجلد نموذج كشف الكلام (Silero VAD).
+    /// </summary>
+    public static bool IsTranscriptionModel(string fileName) =>
+        !fileName.Contains("silero", StringComparison.OrdinalIgnoreCase) &&
+        !fileName.Contains("-vad", StringComparison.OrdinalIgnoreCase) &&
+        !fileName.StartsWith("vad", StringComparison.OrdinalIgnoreCase);
 
     public static string DisplayNameOf(string fileName) =>
         Suggested.FirstOrDefault(m => string.Equals(m.FileName, fileName, StringComparison.OrdinalIgnoreCase))?.DisplayName
@@ -78,16 +100,23 @@ public static class LocalModels
             throw new InvalidOperationException("ملف النموذج يجب أن يكون بصيغة whisper.cpp وامتداده .bin (مثل ggml-large-v3-turbo.bin).");
         }
 
+        var name = System.IO.Path.GetFileName(sourcePath);
+        var sourceFolder = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(sourcePath));
+        if (SearchFolders.Any(folder => string.Equals(System.IO.Path.GetFullPath(folder).TrimEnd('\\', '/'), sourceFolder?.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase)))
+        {
+            return name; // موجود بالفعل في مكان يقرأ منه صدى: لا ننسخه مرة ثانية
+        }
+
         Directory.CreateDirectory(Folder);
-        var target = System.IO.Path.Combine(Folder, System.IO.Path.GetFileName(sourcePath));
+        var target = System.IO.Path.Combine(Folder, name);
         File.Copy(sourcePath, target, overwrite: true);
-        return System.IO.Path.GetFileName(target);
+        return name;
     }
 
     public static bool Remove(string fileName)
     {
         var removed = false;
-        foreach (var path in SearchFolders.Select(folder => System.IO.Path.Combine(folder, fileName)).Where(File.Exists))
+        foreach (var path in OwnFolders.Select(folder => System.IO.Path.Combine(folder, fileName)).Where(File.Exists))
         {
             File.Delete(path);
             removed = true;

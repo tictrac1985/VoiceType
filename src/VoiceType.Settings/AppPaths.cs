@@ -31,6 +31,44 @@ public static class AppPaths
             ? overridden
             : Path.Combine(Root, "models");
 
+    /// <summary>
+    /// مجلد نماذج مشترك مع برنامج Vibe (نفس صيغة whisper.cpp): يُقرأ من إعدادات Vibe إن كان مثبتًا.
+    /// بهذا لا يتكرر نموذج حجمه جيجا على القرص، والبرنامجان يقرآن من نفس المكان.
+    /// null إذا لم يكن Vibe مثبتًا أو لم يُحدَّد له مجلد موجود.
+    /// </summary>
+    public static string? SharedModels => SharedModelsLazy.Value;
+
+    private static readonly Lazy<string?> SharedModelsLazy = new(() =>
+        Environment.GetEnvironmentVariable("VOICETYPE_MODELS") is { Length: > 0 } ? null : DetectVibeModels());
+
+    /// <summary>للاختبارات: إعادة اكتشاف المجلد المشترك من ملف إعدادات محدد.</summary>
+    public static string? DetectVibeModels(string? configPath = null)
+    {
+        try
+        {
+            configPath ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "github.com.thewh1teagle.vibe", "app_config.json");
+            if (!File.Exists(configPath))
+            {
+                return null;
+            }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(configPath));
+            if (doc.RootElement.TryGetProperty("models_folder", out var folder) &&
+                folder.ValueKind == System.Text.Json.JsonValueKind.String &&
+                folder.GetString() is { Length: > 0 } path && Directory.Exists(path))
+            {
+                return Path.GetFullPath(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException or NotSupportedException)
+        {
+            // إعدادات Vibe غير مقروءة: نكمل بمجلدنا فقط
+        }
+
+        return null;
+    }
+
     /// <summary>تسجيلات جمل الاختبار.</summary>
     public static string LabAudio => Path.Combine(Root, "recordings");
 

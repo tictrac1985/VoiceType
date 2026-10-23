@@ -437,6 +437,7 @@ public partial class MainWindow
             description = m.Description,
             recommended = m.Recommended,
             installed = installed.Contains(m.FileName, StringComparer.OrdinalIgnoreCase),
+            shared = LocalModels.IsShared(m.FileName),
         });
         var extra = installed
             .Where(f => LocalModels.Suggested.All(m => !string.Equals(m.FileName, f, StringComparison.OrdinalIgnoreCase)))
@@ -445,9 +446,10 @@ public partial class MainWindow
                 file = f,
                 name = LocalModels.DisplayNameOf(f),
                 sizeMb = Math.Round(new FileInfo(LocalModels.PathOf(f)).Length / 1048576.0),
-                description = "نموذج أضفته بنفسك.",
+                description = LocalModels.IsShared(f) ? "من المجلد المشترك مع Vibe." : "نموذج أضفته بنفسك.",
                 recommended = false,
                 installed = true,
+                shared = LocalModels.IsShared(f),
             });
 
         return new
@@ -540,6 +542,12 @@ public partial class MainWindow
 
     private static void RemoveLocal(string file)
     {
+        if (LocalModels.IsShared(file))
+        {
+            // المجلد المشترك يستخدمه Vibe أيضًا: الحذف من صدى كان سيكسر Vibe
+            throw new InvalidOperationException("النموذج ده في المجلد المشترك مع Vibe، فمش هيتمسح من صدى. لو عاوز تمسحه، امسحه من Vibe.");
+        }
+
         S.ReleaseLocalModel(file);
         if (S.Settings.Primary?.Model == file || S.Settings.Fallback?.Model == file)
         {
