@@ -53,10 +53,16 @@ public class LocalEngineTests
     public void Suggested_models_have_valid_download_links()
     {
         Assert.Contains(LocalModels.Suggested, m => m.Recommended);
-        Assert.All(LocalModels.Suggested, m =>
+        Assert.All(LocalModels.Suggested.Where(m => !LocalModels.IsCrispModel(m.FileName)), m =>
         {
             Assert.EndsWith(".bin", m.FileName);
             Assert.StartsWith("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/", m.DownloadUrl);
+        });
+        Assert.All(LocalModels.Suggested.Where(m => LocalModels.IsCrispModel(m.FileName)), m =>
+        {
+            Assert.EndsWith(".gguf", m.FileName);
+            Assert.StartsWith("https://huggingface.co/", m.DownloadUrl);
+            Assert.EndsWith(m.FileName, m.DownloadUrl);
         });
     }
 

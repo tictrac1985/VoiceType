@@ -13,7 +13,7 @@ namespace VoiceType.Speech;
 /// مجاني، بدون إنترنت، والصوت لا يخرج من الجهاز.
 /// يستخدم كرت الشاشة (Vulkan) إن كان التسريع مثبتًا، وإلا المعالج.
 /// </summary>
-public sealed class WhisperLocalEngine : ISpeechEngine, ISegmentedSpeechEngine, IDisposable
+public sealed class WhisperLocalEngine : ILocalEngine
 {
     private static readonly object RuntimeGate = new();
     private static bool _runtimeConfigured;

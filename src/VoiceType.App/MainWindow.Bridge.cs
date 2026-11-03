@@ -436,7 +436,7 @@ public partial class MainWindow
             sizeMb = m.SizeMegabytes,
             description = m.Description,
             recommended = m.Recommended,
-            installed = installed.Contains(m.FileName, StringComparer.OrdinalIgnoreCase),
+            installed = installed.Contains(m.FileName, StringComparer.OrdinalIgnoreCase) && LocalModels.IsRunnable(m.FileName),
             shared = LocalModels.IsShared(m.FileName),
         });
         var extra = installed
@@ -497,8 +497,19 @@ public partial class MainWindow
 
         var cts = new CancellationTokenSource();
         _downloads[key] = cts;
-        _ = RunDownloadAsync(key, cts, progress =>
-            Downloader.DownloadFileAsync(downloadUrl, Path.Combine(LocalModels.Folder, fileName), progress, cts.Token),
+        _ = RunDownloadAsync(key, cts, async progress =>
+            {
+                // نماذج CrispASR (Cohere) محتاجة المحرك بتاعها: بينزل مرة واحدة قبل النموذج
+                if (LocalModels.IsCrispModel(fileName) && !CrispRuntime.IsInstalled)
+                {
+                    await CrispRuntime.InstallAsync(progress, cts.Token);
+                }
+
+                if (!LocalModels.IsInstalled(fileName))
+                {
+                    await Downloader.DownloadFileAsync(downloadUrl, Path.Combine(LocalModels.Folder, fileName), progress, cts.Token);
+                }
+            },
             onDone: () => S.EnsureDefaults());
         return new { key };
     }

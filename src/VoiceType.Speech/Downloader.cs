@@ -78,17 +78,29 @@ public static class Downloader
         string entryPrefix,
         string targetDirectory,
         IProgress<DownloadProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<ZipArchiveEntry, bool>? include = null,
+        string? expectedSha256 = null)
     {
         var temp = Path.Combine(Path.GetTempPath(), $"voicetype-{Guid.NewGuid():N}.zip");
         try
         {
             await DownloadFileAsync(packageUrl, temp, progress, cancellationToken).ConfigureAwait(false);
+            if (expectedSha256 is not null)
+            {
+                await using var stream = File.OpenRead(temp);
+                var hash = Convert.ToHexStringLower(await System.Security.Cryptography.SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+                if (!string.Equals(hash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new IOException("الملف اللي نزل مش مطابق للنسخة الرسمية (البصمة مختلفة)، فمش هنستخدمه.");
+                }
+            }
+
             Directory.CreateDirectory(targetDirectory);
             var count = 0;
             using var archive = ZipFile.OpenRead(temp);
             foreach (var entry in archive.Entries.Where(e =>
-                         e.FullName.StartsWith(entryPrefix, StringComparison.OrdinalIgnoreCase) && e.Name.Length > 0))
+                         e.FullName.StartsWith(entryPrefix, StringComparison.OrdinalIgnoreCase) && e.Name.Length > 0 && (include?.Invoke(e) ?? true)))
             {
                 entry.ExtractToFile(Path.Combine(targetDirectory, entry.Name), overwrite: true);
                 count++;

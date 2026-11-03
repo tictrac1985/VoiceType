@@ -31,7 +31,28 @@ public static class LocalModels
             "نسخة Turbo بضغط أقل. في العربي المصري غالبًا أضعف من Large-v3.", BaseUrl + "ggml-large-v3-turbo-q8_0.bin"),
         new("ggml-large-v3-turbo.bin", "Whisper Turbo (كامل)", 1620,
             "Turbo بدون ضغط. حجم كبير وتحسن بسيط؛ Large-v3 أفضل منه في العربي.", BaseUrl + "ggml-large-v3-turbo.bin"),
+        new(CohereArabicFile, "Cohere Arabic Q4 (تجريبي)", 1440,
+            "نموذج Cohere الجديد المتخصص في العربي (2 مليار). بيشتغل بمحرك CrispASR المجاني (29 ميجا، بينزل معاه تلقائي). " +
+            "لسه بنجربه على العامية المصرية قبل ما يبقى الاحتياطي.",
+            "https://huggingface.co/cstr/cohere-transcribe-arabic-07-2026-GGUF/resolve/main/" + CohereArabicFile),
     ];
+
+    /// <summary>Cohere Transcribe Arabic (يوليو 2026) بضغط Q4 متظبط على العربي، زي ما صاحب النسخة بينصح.</summary>
+    public const string CohereArabicFile = "cohere-transcribe-arabic-q4_k-imatrix.gguf";
+
+    /// <summary>نموذج بيشتغل بمحرك CrispASR (مش Whisper).</summary>
+    public static bool IsCrispModel(string fileName) =>
+        fileName.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase) &&
+        fileName.StartsWith("cohere-transcribe", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>هل النموذج جاهز يشتغل؟ نماذج CrispASR محتاجة المحرك بتاعها كمان.</summary>
+    public static bool IsRunnable(string fileName) => IsInstalled(fileName) && (!IsCrispModel(fileName) || CrispRuntime.IsInstalled);
+
+    /// <summary>المحرك المناسب لملف النموذج.</summary>
+    public static ILocalEngine CreateEngine(string fileName, string? displayName = null) =>
+        IsCrispModel(fileName)
+            ? new CrispLocalEngine(PathOf(fileName), displayName: displayName)
+            : new WhisperLocalEngine(PathOf(fileName), displayName: displayName);
 
     /// <summary>
     /// مكان تنزيل النماذج الجديدة: المجلد المشترك مع Vibe إن وُجد (حتى لا تتكرر)، وإلا data\models بجوار البرنامج.
@@ -67,12 +88,14 @@ public static class LocalModels
     public static IReadOnlyList<string> Installed() =>
         SearchFolders
             .Where(Directory.Exists)
-            .SelectMany(folder => Directory.EnumerateFiles(folder, "*.bin"))
+            .SelectMany(folder => Directory.EnumerateFiles(folder, "*.bin").Concat(Directory.EnumerateFiles(folder, "*.gguf")))
             .Select(System.IO.Path.GetFileName)
             .OfType<string>()
+            .Where(f => f.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || IsCrispModel(f))
             .Where(IsTranscriptionModel)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(IsCrispModel) // Whisper الأول: الاحتياطي التلقائي يفضل النموذج المجرّب
+            .ThenBy(f => f, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
     /// <summary>
@@ -95,7 +118,8 @@ public static class LocalModels
             throw new FileNotFoundException("الملف غير موجود.", sourcePath);
         }
 
-        if (!string.Equals(System.IO.Path.GetExtension(sourcePath), ".bin", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(System.IO.Path.GetExtension(sourcePath), ".bin", StringComparison.OrdinalIgnoreCase) &&
+            !IsCrispModel(System.IO.Path.GetFileName(sourcePath)))
         {
             throw new InvalidOperationException("ملف النموذج يجب أن يكون بصيغة whisper.cpp وامتداده .bin (مثل ggml-large-v3-turbo.bin).");
         }

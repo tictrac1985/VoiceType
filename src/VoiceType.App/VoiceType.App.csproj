@@ -40,4 +40,15 @@
     <ProjectReference Include="..\VoiceType.Settings\VoiceType.Settings.csproj" />
     <ProjectReference Include="..\VoiceType.Speech\VoiceType.Speech.csproj" />
   </ItemGroup>
+  <!--
+    مع كل publish لصدى: البرنامج المساعد لنماذج CrispASR (Cohere) بيتنشر في المجلد الفرعي crispasr جنب البرنامج.
+    منفصل عن صدى ومش بيتحمّل جواه (مكتبته بتتعارض مع Whisper).
+  -->
+  <Target Name="PublishCrispHost" AfterTargets="Publish" Condition="'$(RuntimeIdentifier)' != ''">
+    <PropertyGroup>
+      <_CrispHostProps>Configuration=$(Configuration);RuntimeIdentifier=$(RuntimeIdentifier);SelfContained=false;PublishSingleFile=true;DebugType=none;PublishDir=$([System.IO.Path]::GetFullPath('$(PublishDir)'))crispasr$([System.IO.Path]::DirectorySeparatorChar)</_CrispHostProps>
+    </PropertyGroup>
+    <MSBuild Projects="..\VoiceType.CrispHost\VoiceType.CrispHost.csproj" Targets="Restore" Properties="$(_CrispHostProps);_CrispRestore=1" />
+    <MSBuild Projects="..\VoiceType.CrispHost\VoiceType.CrispHost.csproj" Targets="Publish" Properties="$(_CrispHostProps)" />
+  </Target>
 </Project>

@@ -30,7 +30,7 @@ public sealed record EngineOption(
 public sealed class AppServices : IDisposable
 {
     private const string AdvancedProvider = "openai-compatible";
-    private readonly Dictionary<string, WhisperLocalEngine> _localEngines = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ILocalEngine> _localEngines = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _localGate = new();
     private System.Threading.Timer? _unloadTimer;
 
@@ -91,7 +91,8 @@ public sealed class AppServices : IDisposable
         foreach (var file in LocalModels.Installed())
         {
             options.Add(new EngineOption($"{LocalModels.ProviderId}|{file}", LocalModels.ProviderId, file,
-                $"على جهازك · {LocalModels.DisplayNameOf(file)}", "local", "free", true, null));
+                $"على جهازك · {LocalModels.DisplayNameOf(file)}", "local", "free", LocalModels.IsRunnable(file),
+                LocalModels.IsRunnable(file) ? null : "محرك CrispASR مش متسطّب. نزّل النموذج تاني من الإعدادات."));
         }
 
         foreach (var definition in OnlineProviders)
@@ -170,7 +171,7 @@ public sealed class AppServices : IDisposable
             {
                 if (!_localEngines.TryGetValue(file, out var engine))
                 {
-                    engine = new WhisperLocalEngine(LocalModels.PathOf(file));
+                    engine = LocalModels.CreateEngine(file);
                     _localEngines[file] = engine;
                 }
 
@@ -423,7 +424,7 @@ public sealed class AppServices : IDisposable
     }
 
     /// <summary>غلاف لا يُفرغ النموذج المحلي المشترك عند انتهاء عملية واحدة.</summary>
-    internal sealed class SharedEngine(WhisperLocalEngine inner) : ISpeechEngine, ISegmentedSpeechEngine
+    internal sealed class SharedEngine(ILocalEngine inner) : ISpeechEngine, ISegmentedSpeechEngine
     {
         public string Id => inner.Id;
 

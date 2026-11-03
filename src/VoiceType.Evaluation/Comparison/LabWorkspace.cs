@@ -136,7 +136,7 @@ public sealed class LabWorkspace
     public ComparisonRunner CreateRunner(HttpClient http) =>
         new(Catalog, http, target =>
             target.Model is not null && LocalModels.IsInstalled(target.Model)
-                ? new WhisperLocalEngine(LocalModels.PathOf(target.Model), displayName: target.Label)
+                ? LocalModels.CreateEngine(target.Model, displayName: target.Label)
                 : null);
 
     /// <summary>يضيف نموذجًا محليًا (بعد تنزيله أو نسخه) إلى قائمة المقارنة.</summary>
