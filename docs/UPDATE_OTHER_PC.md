@@ -38,7 +38,7 @@ dotnet publish src/VoiceType.App -c Release -r win-x64 --self-contained false -p
 
 **5) الإعدادات:** اقرأ `data\settings.json`، وده مفيهوش مفاتيح. اتأكد من القيم دي:
 - `primary` = `gemini|gemini-3.5-transcribe`
-- `fallback` = `local|ggml-large-v3-q5_0.bin`، إلا لو محمد اختار Cohere بنفسه (`local|cohere-transcribe-arabic-q4_k-imatrix.gguf`). ساعتها سيبه زي ما هو.
+- `fallback` = `local|cohere-transcribe-arabic-q4_k-imatrix.gguf` (محمد جربه واختاره احتياطي بعد نماذج الإنترنت، 4 نوفمبر 2026). لو Cohere لسه مش جاهز على الجهاز (الخطوة 7)، سيب `local|ggml-large-v3-q5_0.bin` مؤقتًا لحد ما يبقى جاهز، وبعدين غيّره.
 - `useFallback` = true
 - `liveTypingBeta` = false
 
@@ -49,6 +49,7 @@ dotnet publish src/VoiceType.App -c Release -r win-x64 --self-contained false -p
 **7) نموذج Cohere Arabic Q4:**
 - لو `cohere-transcribe-arabic-q4_k-imatrix.gguf` موجود في مجلد النماذج المشترك وحجمه 1510365440 بايت، ومحرك CrispASR مش موجود (`<البرنامج>\crispasr\crispasr.dll`)، قولّي أدوس «تنزيل» على Cohere من الإعدادات ← النماذج المحلية. صدى هينزّل المحرك بس (29 ميجا) ويتأكد من بصمته.
 - لو النموذج مش موجود، قولّي إنه متاح، وإن تنزيله من نفس المكان (1.5 جيجا، ببلاش). متنزلوش من غير ما أوافق.
+- أول ما النموذج والمحرك يبقوا جاهزين، اقفل صدى، وخلّي `fallback` في `data\settings.json` = `local|cohere-transcribe-arabic-q4_k-imatrix.gguf`، وبعدين افتحه تاني.
 
 **8) شغّل صدى:** `Start-Process` على `VoiceType.exe`، واتأكد إنه شغال (`Responding = True`).
 
