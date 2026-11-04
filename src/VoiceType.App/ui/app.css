@@ -663,3 +663,26 @@ a.path:hover { color: var(--accent); }
 /* الزجاج المضبب يُستخدم فقط في لوحة الإملاء (أخف على كرت الشاشة) */
 [data-theme="orb"] .page:not(#page-dictation) .tile,
 [data-theme="orb"] .page:not(#page-dictation) .card { backdrop-filter: none; background: linear-gradient(160deg, rgba(20, 44, 54, .78), rgba(8, 22, 30, .78)); }
+
+/* ===== v2.18: لينكات، ملفات كتير، متكلمين، تصدير، ذكاء اصطناعي، تحديثات ===== */
+.link-tile input { flex: 1; min-width: 220px; }
+.file-queue { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 2px; max-height: 220px; overflow: auto; }
+.file-queue .q { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); font-size: 13px; }
+.file-queue .q .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-queue .q .st { color: var(--dim); font-size: 12px; }
+.file-queue .q.done .st { color: var(--ok, #4ade80); }
+.file-queue .q.fail .st { color: var(--rec); }
+.file-queue .q.now { border-color: var(--accent); }
+.file-queue .q button { border: 0; background: none; color: var(--dim); cursor: pointer; padding: 2px 4px; }
+select.narrow { min-width: 0; width: auto; max-width: 240px; }
+.speakers-get { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.bar.slim { height: 5px; flex: 1; min-width: 120px; }
+.result-actions.exports { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.result-actions .sep { width: 1px; height: 22px; background: var(--line-strong); margin: 0 4px; }
+#translationText { white-space: pre-wrap; text-align: left; }
+#aiCard input { min-width: 240px; }
+.ai-hint { margin: 8px 2px 0; line-height: 1.7; }
+#updateInfo { line-height: 1.6; }
+.print-frame { position: fixed; width: 0; height: 0; border: 0; visibility: hidden; }
+.meeting-live { flex-basis: 100%; margin-top: 4px; }
+.meeting-live .summary-text { max-height: 180px; overflow: auto; }

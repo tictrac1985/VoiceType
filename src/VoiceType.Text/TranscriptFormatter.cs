@@ -14,6 +14,11 @@ public static class TranscriptFormatter
         TimeSpan? paragraphPause = null,
         int maxParagraphChars = 450)
     {
+        if (segments.Any(s => s.Speaker is >= 0))
+        {
+            return ToSpeakerParagraphs(segments);
+        }
+
         var pause = paragraphPause ?? TimeSpan.FromSeconds(1.5);
         var paragraphs = new List<string>();
         var current = new StringBuilder();
@@ -51,6 +56,41 @@ public static class TranscriptFormatter
 
         var options = new PunctuationOptions { AddTerminalPunctuation = true, MinWordsForTerminal = 1 };
         return string.Join("\n\n", paragraphs.Select(p => ArabicPunctuation.Normalize(p, options)).Where(p => p.Length > 0));
+    }
+
+    /// <summary>
+    /// لما يكون معروف مين اللي بيتكلم: فقرة لكل دور كلام، وقبلها اسم المتكلم.
+    /// مثال: «المتكلم 1: …» ثم «المتكلم 2: …».
+    /// </summary>
+    public static string ToSpeakerParagraphs(IReadOnlyList<TranscriptSegment> segments)
+    {
+        var options = new PunctuationOptions { AddTerminalPunctuation = true, MinWordsForTerminal = 1 };
+        var turns = new List<(int? Speaker, StringBuilder Text)>();
+        foreach (var segment in segments)
+        {
+            var text = segment.Text.Trim();
+            if (text.Length == 0)
+            {
+                continue;
+            }
+
+            var speaker = segment.Speaker is >= 0 ? segment.Speaker : turns.LastOrDefault().Speaker;
+            if (turns.Count == 0 || turns[^1].Speaker != speaker)
+            {
+                turns.Add((speaker, new StringBuilder()));
+            }
+            else
+            {
+                turns[^1].Text.Append(' ');
+            }
+
+            turns[^1].Text.Append(text);
+        }
+
+        return string.Join("\n\n", turns
+            .Select(t => (t.Speaker, Text: ArabicPunctuation.Normalize(t.Text.ToString(), options)))
+            .Where(t => t.Text.Length > 0)
+            .Select(t => t.Speaker is { } who ? $"{TranscriptSegment.SpeakerName(who)}: {t.Text}" : t.Text));
     }
 
     private static bool EndsSentence(StringBuilder text)

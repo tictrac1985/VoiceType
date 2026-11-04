@@ -111,6 +111,9 @@ public class LiveTranscriberTests
         Assert.True(live.IsReady);
         Assert.Contains("key=key-1", socket.Uri!.Query, StringComparison.Ordinal);
 
+        // الصوت المخزّن بيتبعت في الخلفية: نستنى لما يوصل قبل ما «الخادم» يرد (وإلا الاختبار يفشل لما الجهاز مشغول)
+        await WaitFor(() => socket.SentSnapshot().Any(m => m.Contains("audio/pcm;rate=16000", StringComparison.Ordinal)));
+
         socket.Push(Interim("النهارده"));
         socket.Push(Interim("النهارده هنراجع"));
         socket.Push(Final("النهارده هنراجع الـ API."));

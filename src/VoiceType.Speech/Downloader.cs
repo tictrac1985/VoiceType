@@ -27,7 +27,8 @@ public static class Downloader
         string url,
         string destination,
         IProgress<DownloadProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? expectedSha256 = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         var partial = destination + ".part";
@@ -60,6 +61,16 @@ public static class Downloader
                 if (total is > 0 && received != total)
                 {
                     throw new IOException("انقطع التنزيل قبل اكتماله. حاول مرة أخرى.");
+                }
+            }
+
+            if (expectedSha256 is not null)
+            {
+                await using var stream = File.OpenRead(partial);
+                var hash = Convert.ToHexStringLower(await System.Security.Cryptography.SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+                if (!string.Equals(hash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new IOException("الملف اللي نزل مش مطابق للنسخة الرسمية (البصمة مختلفة)، فمش هنستخدمه.");
                 }
             }
 

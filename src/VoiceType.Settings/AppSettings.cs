@@ -81,6 +81,40 @@ public sealed class AppSettings
 
     public bool UseAppProfiles { get; set; } = true;
 
+    /// <summary>
+    /// الذكاء الاصطناعي للملخص و«صيغها لي» والترجمة:
+    /// gemini (مجاني بمفتاح التفريغ) / ollama (على الجهاز أو موديلاته السحابية) / ollama-cloud (ollama.com بمفتاح) / lmstudio.
+    /// لو الموديل المختار فشل، صدى يكمّل بـ Gemini.
+    /// </summary>
+    public string TextAiProvider { get; set; } = "gemini";
+
+    /// <summary>اسم الموديل على Ollama أو LM Studio (مثل qwen3:8b أو gpt-oss:120b-cloud).</summary>
+    public string? TextAiModel { get; set; }
+
+    /// <summary>عنوان Ollama (الافتراضي على نفس الجهاز).</summary>
+    public string OllamaUrl { get; set; } = "http://127.0.0.1:11434";
+
+    /// <summary>عنوان LM Studio (على نفس الجهاز، أو جهاز تاني، أو LM Link).</summary>
+    public string LmStudioUrl { get; set; } = "http://127.0.0.1:1234";
+
+    /// <summary>
+    /// دقة النموذج المحلي (عرض البحث beam): 0 = تلقائي (5 على كرت الشاشة للملفات والإملاء، 1 على المعالج للإملاء)،
+    /// 1 = الأسرع، 3 = متوازن، 5 = الأدق، 8 = أقصى دقة (أبطأ).
+    /// </summary>
+    public int LocalBeamSize { get; set; }
+
+    /// <summary>«مين اللي بيتكلم» في الملفات والاجتماعات: -1 = مقفول، 0 = تلقائي، أو عدد المتكلمين.</summary>
+    public int Speakers { get; set; } = -1;
+
+    /// <summary>طول سطر الترجمة (SRT/VTT): 0 = زي ما هو، 42 = عادي، 24 = قصير للريلز، 60 = طويل.</summary>
+    public int CaptionChars { get; set; } = 42;
+
+    /// <summary>يقترح تسجيل الاجتماع لما Zoom أو Teams أو Meet يستخدموا الميكروفون.</summary>
+    public bool DetectMeetings { get; set; } = true;
+
+    /// <summary>يدوّر على تحديثات لصدى على GitHub مرة في اليوم.</summary>
+    public bool CheckUpdates { get; set; } = true;
+
     [System.Text.Json.Serialization.JsonIgnore]
     public List<AppProfile> Profiles => AppProfiles ??= AppProfile.Defaults();
 

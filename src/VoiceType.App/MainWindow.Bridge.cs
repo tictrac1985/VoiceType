@@ -6,6 +6,7 @@ using VoiceType.App.Services;
 using VoiceType.Core.Speech;
 using VoiceType.Providers;
 using VoiceType.Providers.Resilience;
+using VoiceType.Providers.Rewrite;
 using VoiceType.Settings;
 using VoiceType.Speech;
 using VoiceType.Text;
@@ -17,6 +18,9 @@ public partial class MainWindow
 {
     private readonly Dictionary<string, CancellationTokenSource> _downloads = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _fileCts;
+
+    // التلخيص والترجمة ليهم إلغاء لوحدهم: ميوقفوش تفريغ ملف شغال في الطابور
+    private CancellationTokenSource? _textCts;
     private static readonly VoiceType.Speech.MeetingRecorder Meeting = new();
     private System.Windows.Threading.DispatcherTimer? _meetingTimer;
     private FileTranscript? _lastTranscript;
@@ -66,20 +70,18 @@ public partial class MainWindow
 
             // ===== تسجيل الاجتماعات =====
             case "meeting.start":
-                Meeting.Start(Path.Combine(AppPaths.Ensure(AppPaths.Transcripts), "تسجيلات"), p["mic"]?.GetValue<bool>() ?? true);
-                _meetingTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-                _meetingTimer.Tick -= OnMeetingTick;
-                _meetingTimer.Tick += OnMeetingTick;
-                _meetingTimer.Start();
+                StartMeeting(p["mic"]?.GetValue<bool>() ?? true);
                 return new { recording = true };
             case "meeting.stop":
             {
+                StopMeetingPreview();
                 _meetingTimer?.Stop();
                 var seconds = Meeting.Elapsed.TotalSeconds;
                 var recorded = await Meeting.StopAsync();
                 return new { path = recorded, name = Path.GetFileName(recorded), sizeMb = Math.Round(new FileInfo(recorded).Length / 1048576.0, 1), seconds = Math.Round(seconds) };
             }
             case "meeting.cancel":
+                StopMeetingPreview();
                 _meetingTimer?.Stop();
                 Meeting.Cancel();
                 return null;
@@ -208,16 +210,49 @@ public partial class MainWindow
 
             // ===== تفريغ الملفات =====
             case "files.pick":
-                return PickAudioFile();
+                return PickAudioFiles(p["multi"]?.GetValue<bool>() ?? false);
             case "files.dropped":
-                return droppedFiles.Count > 0 ? FileInfoDto(droppedFiles[0]) : null;
+                return p["multi"]?.GetValue<bool>() == true
+                    ? droppedFiles.Where(File.Exists).Select(FileInfoDto).ToList()
+                    : droppedFiles.Count > 0 ? FileInfoDto(droppedFiles[0]) : null;
             case "files.transcribe":
-                return await TranscribeFileAsync(Required(p, "path"), Str(p, "engine"));
+                return await TranscribeFileAsync(Required(p, "path"), Str(p, "engine"), (int?)p["speakers"]);
+            case "files.translate":
+                return await TranslateAsync(Str(p, "text") ?? string.Empty);
+            case "files.html":
+                return new { html = TranscriptHtml(Str(p, "text") ?? string.Empty) };
+            case "speakers.install":
+                return StartSpeakersInstall();
+            case "links.fetch":
+                return await FetchLinkAsync(Required(p, "url"));
+
+            // ===== الذكاء الاصطناعي للملخص والصياغة والترجمة =====
+            case "textai.models":
+                return await TextAiModelsAsync(Str(p, "provider") ?? "ollama", p["start"]?.GetValue<bool>() ?? true);
+            case "textai.save":
+                SaveTextAi(p);
+                return State();
+            case "textai.setKey":
+                S.Keys.Set(AppServices.OllamaCloudKeyId, SecureKeyStore.Clean(Str(p, "key")));
+                return State();
+            case "textai.removeKey":
+                S.Keys.Remove(AppServices.OllamaCloudKeyId);
+                return State();
+            case "textai.test":
+                return await TestTextAiAsync();
+
+            // ===== التحديثات من GitHub =====
+            case "update.check":
+                _update = await UpdateService.CheckAsync();
+                return _update;
+            case "update.install":
+                return StartUpdateInstall();
             case "files.cancel":
                 _fileCts?.Cancel();
+                _textCts?.Cancel();
                 return null;
             case "files.export":
-                return ExportTranscript(Required(p, "format"), Str(p, "text") ?? string.Empty);
+                return await ExportTranscriptAsync(Required(p, "format"), Str(p, "text") ?? string.Empty, (int?)p["captionChars"]);
             case "files.showInFolder":
                 if (Str(p, "path") is { } shownPath)
                 {
@@ -268,12 +303,30 @@ public partial class MainWindow
             micColor = S.Settings.MicColor,
             micAlwaysOnTop = S.Settings.MicAlwaysOnTop,
             micDimWhenIdle = S.Settings.MicDimWhenIdle,
+            localBeamSize = S.Settings.LocalBeamSize,
+            speakers = S.Settings.Speakers,
+            captionChars = S.Settings.CaptionChars,
+            detectMeetings = S.Settings.DetectMeetings,
+            checkUpdates = S.Settings.CheckUpdates,
         },
         engines = S.Engines().Select(e => new { e.Key, e.Label, e.Kind, e.Pricing, e.Ready, e.Reason }),
         profiles = S.Settings.Profiles.Select(pr => new { pr.Id, pr.Name, pr.Match, pr.Style, pr.Writing, pr.Enabled }),
         recentApps = App.Dictation.RecentApps,
         meetingRecording = Meeting.IsRecording,
         hasGeminiKey = S.Keys.Has("gemini"),
+        canRewrite = S.Keys.Has("gemini") || S.CreateTextEngine() is not null,
+        speakersReady = SpeakerDiarizer.IsReady,
+        linksReady = LinkDownloader.IsInstalled,
+        textAi = new
+        {
+            provider = S.Settings.TextAiProvider,
+            model = S.Settings.TextAiModel,
+            ollamaUrl = S.Settings.OllamaUrl,
+            lmStudioUrl = S.Settings.LmStudioUrl,
+            hasOllamaCloudKey = S.Keys.Has(AppServices.OllamaCloudKeyId),
+            ollamaInstalled = LocalTextServers.OllamaCli is not null,
+            lmStudioInstalled = LocalTextServers.LmStudioCli is not null,
+        },
     };
 
     private static bool SafeStartupState()
@@ -325,6 +378,33 @@ public partial class MainWindow
         if (p["useFallback"] is JsonValue useFallback)
         {
             settings.UseFallback = useFallback.GetValue<bool>();
+        }
+
+        if (p["localBeamSize"] is JsonValue beam && int.TryParse(beam.ToString(), out var beamSize))
+        {
+            settings.LocalBeamSize = Math.Clamp(beamSize, 0, 8);
+            S.ApplyLocalPrecision();
+        }
+
+        if (p["speakers"] is JsonValue speakers && int.TryParse(speakers.ToString(), out var speakerCount))
+        {
+            settings.Speakers = Math.Clamp(speakerCount, -1, 10);
+        }
+
+        if (p["captionChars"] is JsonValue caption && int.TryParse(caption.ToString(), out var chars))
+        {
+            settings.CaptionChars = Math.Clamp(chars, 0, 120);
+        }
+
+        if (p["detectMeetings"] is JsonValue detect)
+        {
+            settings.DetectMeetings = detect.GetValue<bool>();
+            App.Current.SetMeetingDetection(settings.DetectMeetings);
+        }
+
+        if (p["checkUpdates"] is JsonValue updates)
+        {
+            settings.CheckUpdates = updates.GetValue<bool>();
         }
 
         if (p["fixMixedDirection"] is JsonValue direction)
@@ -540,9 +620,14 @@ public partial class MainWindow
         {
             Push("download.error", new { key, message = "أُلغي التنزيل." });
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        catch (HttpRequestException)
         {
             Push("download.error", new { key, message = "تعذّر التنزيل. تأكد من الاتصال بالإنترنت وحاول مرة أخرى." });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // أي خطأ تاني (ملف مضغوط بايظ، بصمة مختلفة، تشغيل فشل…): الواجهة لازم تعرف، وإلا شريط التقدم يفضل معلّق
+            Push("download.error", new { key, message = string.IsNullOrWhiteSpace(ex.Message) ? "تعذّر التنزيل. حاول مرة أخرى." : ex.Message });
         }
         finally
         {
@@ -664,15 +749,21 @@ public partial class MainWindow
         key is null ? null : key.Length <= 8 ? new string('•', key.Length) : $"{key[..4]}••••{key[^4..]}";
 
     // ===== تفريغ الملفات =====
-    private object? PickAudioFile()
+    private object? PickAudioFiles(bool multi)
     {
         var extensions = string.Join(";", AudioDecoder.SupportedExtensions.Select(e => "*" + e));
         var dialog = new OpenFileDialog
         {
-            Title = "اختر ملفًا صوتيًا",
-            Filter = $"ملفات صوتية ({extensions})|{extensions}|كل الملفات (*.*)|*.*",
+            Title = multi ? "اختار ملف أو أكتر" : "اختر ملفًا صوتيًا",
+            Filter = $"ملفات صوت وفيديو ({extensions})|{extensions}|كل الملفات (*.*)|*.*",
+            Multiselect = multi,
         };
-        return dialog.ShowDialog(this) == true ? FileInfoDto(dialog.FileName) : null;
+        if (dialog.ShowDialog(this) != true)
+        {
+            return null;
+        }
+
+        return multi ? dialog.FileNames.Select(FileInfoDto).ToList() : FileInfoDto(dialog.FileName);
     }
 
     private static object FileInfoDto(string path) => new
@@ -682,7 +773,23 @@ public partial class MainWindow
         sizeMb = Math.Round(new FileInfo(path).Length / 1048576.0, 1),
     };
 
-    private async Task<object> TranscribeFileAsync(string path, string? engineKey)
+    // تفريغ ملف أو تنزيل لينك شغال دلوقتي (عشان التحديث ميقفلش البرنامج في النص)
+    private bool _fileBusy;
+
+    private async Task<object> TranscribeFileAsync(string path, string? engineKey, int? speakers)
+    {
+        _fileBusy = true;
+        try
+        {
+            return await TranscribeFileCoreAsync(path, engineKey, speakers);
+        }
+        finally
+        {
+            _fileBusy = false;
+        }
+    }
+
+    private async Task<object> TranscribeFileCoreAsync(string path, string? engineKey, int? speakers)
     {
         var choice = EngineChoice.Parse(engineKey) ?? S.Settings.FilesEngine ?? S.Settings.Primary
                      ?? throw new InvalidOperationException("اختر نموذجًا أولًا.");
@@ -699,24 +806,54 @@ public partial class MainWindow
         var engine = S.CreateEngine(choice);
         var progress = new Progress<FileTranscriptionProgress>(p => Push("file.progress", new { fraction = p.Fraction, stage = p.Stage }));
 
-        var transcript = await new FileTranscriber().TranscribeAsync(path, engine, S.TranscriptionOptions, progress, _fileCts.Token);
+        // «مين اللي بيتكلم»: -1 = مقفول، 0 = تلقائي، أو عدد المتكلمين
+        var who = speakers ?? S.Settings.Speakers;
+        if (speakers is { } chosen && chosen != S.Settings.Speakers)
+        {
+            S.Settings.Speakers = Math.Clamp(chosen, -1, 10);
+            S.Settings.Save();
+        }
+
+        var labelSpeakers = who >= 0 && AppServices.IsLocal(choice.Provider);
+        if (labelSpeakers && !SpeakerDiarizer.IsReady)
+        {
+            throw new InvalidOperationException("معرفة المتكلمين محتاجة تنزّل نموذجها الأول (24 ميجا). دوس «تنزيل» جنب «مين اللي بيتكلم».");
+        }
+
+        var transcriber = new FileTranscriber
+        {
+            SpeakerLabeler = labelSpeakers
+                ? async (samples, segments, ct) =>
+                {
+                    using var diarizer = new SpeakerDiarizer();
+                    return await diarizer.LabelAsync(samples, segments, who, ct);
+                }
+                : null,
+        };
+        var transcript = await transcriber.TranscribeAsync(path, engine, S.TranscriptionOptions, progress, _fileCts.Token);
         _lastTranscript = transcript;
 
         // نسخة تلقائية في مجلد النصوص
         if (AppServices.IsLocal(choice.Provider))
         {
-            // ما تعلّمه النموذج المحلي من Gemini يُطبَّق على الملفات أيضًا
-            transcript = transcript with { Text = S.Learned.Apply(transcript.Text) };
+            // ما تعلّمه النموذج المحلي من Gemini يُطبَّق على الملفات أيضًا (على الأجزاء كمان، عشان SRT والتصدير يطابقوا النص)
+            transcript = transcript with
+            {
+                Text = S.Learned.Apply(transcript.Text),
+                Segments = transcript.Segments.Select(segment => segment with { Text = S.Learned.Apply(segment.Text) }).ToList(),
+            };
             _lastTranscript = transcript;
         }
 
-        var autoSave = Path.Combine(AppPaths.Ensure(AppPaths.Transcripts), Path.GetFileNameWithoutExtension(path) + ".txt");
+        var autoSave = UniquePath(Path.Combine(AppPaths.Ensure(AppPaths.Transcripts), Path.GetFileNameWithoutExtension(path) + ".txt"));
         TranscriptExporter.SaveText(autoSave, transcript.Text);
 
         return new
         {
             text = transcript.Text,
             segments = transcript.Segments.Count,
+            speakers = transcript.SpeakerCount,
+            speakersSkipped = who >= 0 && !labelSpeakers,
             hasTimestamps = engine is ISegmentedSpeechEngine,
             durationSeconds = Math.Round(transcript.AudioDuration.TotalSeconds),
             elapsedSeconds = Math.Round(transcript.Elapsed.TotalSeconds, 1),
@@ -724,6 +861,152 @@ public partial class MainWindow
             savedTo = autoSave,
         };
     }
+
+    /// <summary>اسم ملف مش موجود قبل كده («اسم (2).txt»…)، عشان تفريغ ملف تاني بنفس الاسم ميمسحش القديم.</summary>
+    private static string UniquePath(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return path;
+        }
+
+        var folder = Path.GetDirectoryName(path)!;
+        var name = Path.GetFileNameWithoutExtension(path);
+        var extension = Path.GetExtension(path);
+        for (var i = 2; ; i++)
+        {
+            var candidate = Path.Combine(folder, $"{name} ({i}){extension}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static UpdateService.UpdateInfo? _update;
+
+    /// <summary>ينزّل التحديث ويركّبه، وبعدين صدى يقفل ويفتح بالنسخة الجديدة.</summary>
+    private object StartUpdateInstall()
+    {
+        if (Meeting.IsRecording || App.Dictation.State != DictationState.Idle)
+        {
+            throw new InvalidOperationException("استنى لما الإملاء أو تسجيل الاجتماع يخلص، وبعدين حدّث.");
+        }
+
+        // البرنامج هيقفل بعد التحديث: أي تفريغ ملف أو تنزيل شغال كان هيضيع
+        if (_fileBusy || _downloads.Keys.Any(k => k != "update"))
+        {
+            throw new InvalidOperationException("استنى لما تفريغ الملف أو التنزيل الشغال يخلص، وبعدين حدّث.");
+        }
+
+        var update = _update is { Available: true } ? _update : throw new InvalidOperationException("دوّر على تحديث الأول.");
+        const string key = "update";
+        if (!_downloads.ContainsKey(key))
+        {
+            var cts = new CancellationTokenSource();
+            _downloads[key] = cts;
+            _ = RunDownloadAsync(key, cts, progress => UpdateService.InstallAsync(update, progress, cts.Token), onDone: () =>
+            {
+                UpdateService.RestartAfterUpdate();
+                Dispatcher.InvokeAsync(() => App.Current.ExitApp());
+            });
+        }
+
+        return new { key };
+    }
+
+    /// <summary>هل فيه تسجيل اجتماع شغال؟</summary>
+    internal static bool MeetingRecording => Meeting.IsRecording;
+
+    /// <summary>يبدأ تسجيل الاجتماع (من الزرار، أو لما صدى يلاقي اجتماع بدأ).</summary>
+    internal void StartMeeting(bool includeMic)
+    {
+        if (Meeting.IsRecording)
+        {
+            return;
+        }
+
+        Meeting.Start(Path.Combine(AppPaths.Ensure(AppPaths.Transcripts), "تسجيلات"), includeMic);
+        _meetingTimer ??= new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _meetingTimer.Tick -= OnMeetingTick;
+        _meetingTimer.Tick += OnMeetingTick;
+        _meetingTimer.Start();
+        StartMeetingPreview();
+    }
+
+    private CancellationTokenSource? _previewCts;
+
+    /// <summary>
+    /// الكلام يظهر أثناء الاجتماع: كل 20 ثانية بناخد الصوت الجديد ونفرّغه بالنموذج اللي على الجهاز (Cohere سريع).
+    /// ده للعرض بس؛ التفريغ النهائي بعد الإيقاف بيكون على الملف كله (أدق، ومعاه مين اللي بيتكلم).
+    /// لو مفيش نموذج على الجهاز، مفيش عرض (مش بنبعت صوت الاجتماع للإنترنت كل شوية).
+    /// </summary>
+    private void StartMeetingPreview()
+    {
+        StopMeetingPreview();
+        var choice = new[] { S.Settings.Fallback, S.Settings.Primary, S.Settings.FilesEngine }
+            .FirstOrDefault(c => c is not null && AppServices.IsLocal(c.Provider) && S.IsReady(c));
+        if (choice is null)
+        {
+            Push("meeting.live", new { text = (string?)null, note = "العرض أثناء الاجتماع محتاج نموذج على جهازك (Cohere أو Whisper)." });
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _previewCts = cts;
+        _ = Task.Run(async () =>
+        {
+            var engine = S.CreateEngine(choice);
+            while (!cts.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(20), cts.Token);
+                    var audio = Meeting.TakeNewAudio16k();
+                    if (audio.Length < AudioConverter.SampleRate * 2 || Rms(audio) < 0.004)
+                    {
+                        continue; // سكوت
+                    }
+
+                    // من غير إلغاء: لو وقفنا التسجيل والجزء ده لسه بيتفرّغ، بنسيبه يخلص ونرمي نتيجته.
+                    // الإلغاء كان بيقفل المساعد، فالتفريغ النهائي (والإملاء) يضطروا يحمّلوا النموذج من الأول.
+                    var result = await engine.TranscribeAsync(new Core.Speech.AudioPayload(AudioDecoder.ToWav16k(audio), "wav", "live.wav"), S.TranscriptionOptions, CancellationToken.None);
+                    if (!cts.IsCancellationRequested && !string.IsNullOrWhiteSpace(result.Text))
+                    {
+                        Push("meeting.live", new { text = result.Text.Trim() });
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // العرض اختياري: لو جزء فشل نكمّل، والتسجيل نفسه مش بيتأثر
+                }
+            }
+        });
+    }
+
+    private void StopMeetingPreview()
+    {
+        _previewCts?.Cancel();
+        _previewCts = null;
+    }
+
+    private static double Rms(float[] samples)
+    {
+        double sum = 0;
+        foreach (var sample in samples)
+        {
+            sum += sample * sample;
+        }
+
+        return Math.Sqrt(sum / Math.Max(1, samples.Length));
+    }
+
+    /// <summary>الاجتماع خلص: الواجهة توقف التسجيل وتفرّغه زي زرار «إيقاف وتفريغ».</summary>
+    internal void RequestMeetingStop() => Push("meeting.stopRequested", null);
 
     private void OnMeetingTick(object? sender, EventArgs e) =>
         Push("meeting.tick", new { seconds = Math.Floor(Meeting.Elapsed.TotalSeconds), level = Math.Round(Meeting.Level, 3) });
@@ -736,27 +1019,76 @@ public partial class MainWindow
             throw new InvalidOperationException("لا يوجد نص للتلخيص.");
         }
 
-        var rewriter = S.CreateRewriter() ?? throw new InvalidOperationException("التلخيص يحتاج مفتاح Gemini (مجاني). أضفه من صفحة النماذج.");
-        _fileCts?.Cancel();
-        _fileCts = new CancellationTokenSource();
-        var summary = await rewriter.SummarizeAsync(text, _fileCts.Token);
+        var rewriter = S.CreateRewriter() ?? throw new InvalidOperationException("التلخيص محتاج موديل ذكاء اصطناعي: اختار واحد من الإعدادات (Ollama أو LM Studio)، أو أضف مفتاح Gemini (مجاني).");
+        _textCts?.Cancel();
+        _textCts = new CancellationTokenSource();
+        var summary = await rewriter.SummarizeAsync(text, _textCts.Token);
         var source = _lastTranscript?.FilePath;
         var name = (source is null ? "تفريغ" : Path.GetFileNameWithoutExtension(source)) + " - ملخص.txt";
         var saved = Path.Combine(AppPaths.Ensure(AppPaths.Transcripts), name);
         TranscriptExporter.SaveText(saved, summary);
-        return new { summary, savedTo = saved };
+        return new { summary, savedTo = saved, engine = rewriter.LastEngine };
     }
 
-    private object? ExportTranscript(string format, string text)
+    /// <summary>ترجمة النص كله للإنجليزي، ويتحفظ جنب النص.</summary>
+    private async Task<object> TranslateAsync(string text)
     {
-        var source = _lastTranscript?.FilePath;
-        var baseName = source is null ? "تفريغ" : Path.GetFileNameWithoutExtension(source);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new InvalidOperationException("مفيش نص للترجمة.");
+        }
+
+        var rewriter = S.CreateRewriter() ?? throw new InvalidOperationException("الترجمة محتاجة موديل ذكاء اصطناعي: اختار واحد من الإعدادات، أو أضف مفتاح Gemini (مجاني).");
+        _textCts?.Cancel();
+        _textCts = new CancellationTokenSource();
+        var translation = await rewriter.TranslateAsync(text, _textCts.Token);
+        var saved = Path.Combine(AppPaths.Ensure(AppPaths.Transcripts), BaseName() + " - English.txt");
+        TranscriptExporter.SaveText(saved, translation);
+        return new { translation, savedTo = saved, engine = rewriter.LastEngine };
+    }
+
+    private string BaseName() => _lastTranscript?.FilePath is { } source ? Path.GetFileNameWithoutExtension(source) : "تفريغ";
+
+    /// <summary>الأجزاء بأوقاتها لو النص لسه زي ما طلع (لو المستخدم عدّله، نستخدم النص المعدّل من غير أوقات).</summary>
+    private IReadOnlyList<TranscriptSegment> SegmentsFor(string text) =>
+        _lastTranscript is { } t && string.Equals(t.Text.Trim(), text.Trim(), StringComparison.Ordinal) ? t.Segments : [];
+
+    private string TranscriptHtml(string text)
+    {
+        var subtitle = _lastTranscript is { } t
+            ? $"{DateTime.Now:yyyy-MM-dd} · المدة {TimeSpan.FromSeconds(Math.Round(t.AudioDuration.TotalSeconds)):g}" + (t.HasSpeakers ? $" · {t.SpeakerCount} متكلمين" : string.Empty)
+            : DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        return TranscriptExporter.ToHtml(BaseName(), text, SegmentsFor(text), subtitle);
+    }
+
+    private async Task<object?> ExportTranscriptAsync(string format, string text, int? captionChars)
+    {
+        var baseName = BaseName();
         var (filter, extension) = format switch
         {
             "docx" => ("مستند Word (*.docx)|*.docx", ".docx"),
             "srt" => ("ترجمة SRT (*.srt)|*.srt", ".srt"),
+            "vtt" => ("ترجمة WebVTT (*.vtt)|*.vtt", ".vtt"),
+            "json" => ("JSON (*.json)|*.json", ".json"),
+            "html" => ("صفحة HTML (*.html)|*.html", ".html"),
+            "pdf" => ("PDF (*.pdf)|*.pdf", ".pdf"),
             _ => ("ملف نصي (*.txt)|*.txt", ".txt"),
         };
+
+        var segments = SegmentsFor(text);
+        if (format is "srt" or "vtt" && segments.Count == 0)
+        {
+            throw new InvalidOperationException(_lastTranscript is null
+                ? "مفيش أوقات. فرّغ الملف الأول."
+                : "النص اتعدّل بعد التفريغ، فالأوقات مبقتش مظبوطة. فرّغ الملف تاني لو عاوز ترجمة بأوقات.");
+        }
+
+        var chars = captionChars ?? S.Settings.CaptionChars;
+        if (captionChars is { } chosenChars && chosenChars != S.Settings.CaptionChars)
+        {
+            S.Settings.CaptionChars = Math.Clamp(chosenChars, 0, 120);
+            S.Settings.Save();
+        }
 
         var dialog = new SaveFileDialog
         {
@@ -776,8 +1108,19 @@ public partial class MainWindow
                 TranscriptExporter.SaveDocx(dialog.FileName, baseName, text);
                 break;
             case "srt":
-                TranscriptExporter.SaveSrt(dialog.FileName, _lastTranscript?.Segments
-                    ?? throw new InvalidOperationException("لا توجد توقيتات. فرّغ الملف أولًا."));
+                TranscriptExporter.SaveSrt(dialog.FileName, segments, chars);
+                break;
+            case "vtt":
+                TranscriptExporter.SaveVtt(dialog.FileName, segments, chars);
+                break;
+            case "json":
+                TranscriptExporter.SaveJson(dialog.FileName, baseName, text, segments, _lastTranscript?.EngineId, _lastTranscript?.AudioDuration);
+                break;
+            case "html":
+                File.WriteAllText(dialog.FileName, TranscriptHtml(text), new System.Text.UTF8Encoding(false));
+                break;
+            case "pdf":
+                await PrintHtmlToPdfAsync(TranscriptHtml(text), dialog.FileName);
                 break;
             default:
                 TranscriptExporter.SaveText(dialog.FileName, text);
@@ -785,6 +1128,217 @@ public partial class MainWindow
         }
 
         return new { path = dialog.FileName };
+    }
+
+    /// <summary>
+    /// PDF بالعربي مظبوط (اتجاه وحروف موصولة): بنفتح صفحة HTML في متصفح مخفي (WebView2 نفسه)
+    /// ونطبعها PDF. من غير أي برنامج زيادة.
+    /// </summary>
+    private async Task PrintHtmlToPdfAsync(string html, string path)
+    {
+        var environment = Web.CoreWebView2?.Environment ?? throw new InvalidOperationException("الواجهة لسه بتحمّل. جرّب تاني بعد ثانية.");
+        var temp = Path.Combine(Path.GetTempPath(), $"voicetype-print-{Guid.NewGuid():N}.html");
+        await File.WriteAllTextAsync(temp, html, new System.Text.UTF8Encoding(false));
+        var controller = await environment.CreateCoreWebView2ControllerAsync(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+        try
+        {
+            controller.IsVisible = false;
+            var loaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            controller.CoreWebView2.NavigationCompleted += (_, e) => loaded.TrySetResult(e.IsSuccess);
+            controller.CoreWebView2.Navigate(new Uri(temp).AbsoluteUri);
+            if (!await loaded.Task.WaitAsync(TimeSpan.FromSeconds(30)))
+            {
+                throw new InvalidOperationException("تعذّر تجهيز الصفحة للطباعة.");
+            }
+
+            var settings = environment.CreatePrintSettings();
+            settings.ShouldPrintBackgrounds = true;
+            settings.MarginTop = settings.MarginBottom = 0.5;
+            settings.MarginLeft = settings.MarginRight = 0.5;
+            if (!await controller.CoreWebView2.PrintToPdfAsync(path, settings))
+            {
+                throw new InvalidOperationException("تعذّر حفظ الـ PDF.");
+            }
+        }
+        finally
+        {
+            controller.Close();
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    /// <summary>تنزيل نموذج بصمة الأصوات (ومحرك CrispASR لو مش موجود).</summary>
+    private object StartSpeakersInstall()
+    {
+        const string key = "speakers";
+        if (!_downloads.ContainsKey(key))
+        {
+            var cts = new CancellationTokenSource();
+            _downloads[key] = cts;
+            _ = RunDownloadAsync(key, cts, progress => SpeakerDiarizer.InstallAsync(progress, cts.Token), onDone: null);
+        }
+
+        return new { key };
+    }
+
+    /// <summary>ينزّل صوت اللينك (وأداة التنزيل نفسها أول مرة)، ويرجّعه كملف جاهز للتفريغ.</summary>
+    private async Task<object> FetchLinkAsync(string url)
+    {
+        _fileBusy = true;
+        try
+        {
+            return await FetchLinkCoreAsync(url);
+        }
+        finally
+        {
+            _fileBusy = false;
+        }
+    }
+
+    private async Task<object> FetchLinkCoreAsync(string url)
+    {
+        if (!LinkDownloader.IsValidLink(url))
+        {
+            throw new InvalidOperationException("ده مش لينك صحيح. الصق لينك يبدأ بـ https://");
+        }
+
+        _fileCts?.Cancel();
+        _fileCts = new CancellationTokenSource();
+        var token = _fileCts.Token;
+        LinkDownloader.CleanupDownloads();
+        if (LinkDownloader.NeedsRefresh)
+        {
+            await InstallLinkToolAsync(token);
+        }
+
+        var audioProgress = new Progress<double>(f =>
+            Push("file.progress", new { fraction = f, stage = $"بنزّل الصوت من اللينك… {f:P0}" }));
+        Push("file.progress", new { fraction = 0.0, stage = "بنزّل الصوت من اللينك…" });
+        string file;
+        try
+        {
+            file = await LinkDownloader.DownloadAudioAsync(url, audioProgress, token);
+        }
+        catch (InvalidOperationException) when (DateTime.UtcNow - File.GetLastWriteTimeUtc(LinkDownloader.ToolPath) > TimeSpan.FromDays(1))
+        {
+            // غالبًا الموقع غيّر طريقته: نجيب آخر نسخة من الأداة ونجرّب مرة كمان
+            await InstallLinkToolAsync(token);
+            file = await LinkDownloader.DownloadAudioAsync(url, audioProgress, token);
+        }
+
+        return FileInfoDto(file);
+    }
+
+    private async Task InstallLinkToolAsync(CancellationToken token)
+    {
+        Push("file.progress", new { fraction = 0.0, stage = "بنجيب آخر نسخة من أداة تنزيل اللينكات…" });
+        await LinkDownloader.InstallAsync(new Progress<DownloadProgress>(d =>
+            Push("file.progress", new { fraction = d.Fraction ?? 0, stage = $"بنجيب آخر نسخة من أداة تنزيل اللينكات… {d}" })), token);
+    }
+
+    /// <summary>الموديلات المتاحة على Ollama / LM Studio (وبنشغّل الخادم لو متسطّب ومقفول).</summary>
+    private static async Task<object> TextAiModelsAsync(string provider, bool start)
+    {
+        if (S.TextServer(provider) is not { } server)
+        {
+            return new { models = Array.Empty<string>(), error = (string?)null };
+        }
+
+        if (provider == "ollama-cloud" && server.Key is null)
+        {
+            return new { models = Array.Empty<string>(), error = (string?)"أضف مفتاح Ollama Cloud الأول (من ollama.com ← Settings ← Keys)." };
+        }
+
+        try
+        {
+            return new { models = await TextServerEngine.ListModelsAsync(S.Http, server.Kind, server.Url, server.Key, CancellationToken.None), error = (string?)null };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException or ArgumentException)
+        {
+            // LM Studio ممكن يكون شغال على بورت تاني (أو نشغّله ونعرف بورته): نحفظ العنوان الصح
+            if (provider == "lmstudio" && IsLocalUrl(server.Url))
+            {
+                var running = await LocalTextServers.LmStudioRunningUrlAsync(CancellationToken.None);
+                if (running is null && start && LocalTextServers.LmStudioCli is not null)
+                {
+                    await LocalTextServers.TryStartAsync(S.Http, server.Kind, server.Url, CancellationToken.None);
+                    running = await LocalTextServers.LmStudioRunningUrlAsync(CancellationToken.None);
+                }
+
+                if (running is not null)
+                {
+                    try
+                    {
+                        var found = await TextServerEngine.ListModelsAsync(S.Http, server.Kind, running, null, CancellationToken.None);
+                        S.Settings.LmStudioUrl = running;
+                        S.Settings.Save();
+                        return new { models = found, error = (string?)null, url = running };
+                    }
+                    catch (Exception again) when (again is HttpRequestException or InvalidOperationException or TaskCanceledException)
+                    {
+                        ex = again;
+                    }
+                }
+            }
+
+            if (start && provider != "lmstudio" && await LocalTextServers.TryStartAsync(S.Http, server.Kind, server.Url, CancellationToken.None))
+            {
+                try
+                {
+                    return new { models = await TextServerEngine.ListModelsAsync(S.Http, server.Kind, server.Url, server.Key, CancellationToken.None), error = (string?)null };
+                }
+                catch (Exception again) when (again is HttpRequestException or InvalidOperationException or TaskCanceledException)
+                {
+                    ex = again;
+                }
+            }
+
+            var name = provider == "lmstudio" ? "LM Studio" : "Ollama";
+            return new { models = Array.Empty<string>(), error = (string?)$"{name} مش بيرد على {server.Url}. اتأكد إنه متسطّب وشغال. ({ex.Message})" };
+        }
+    }
+
+    private static bool IsLocalUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase));
+
+    private static void SaveTextAi(JsonObject p)
+    {
+        var settings = S.Settings;
+        if (Str(p, "provider") is { } provider && provider is "gemini" or "ollama" or "ollama-cloud" or "lmstudio")
+        {
+            settings.TextAiProvider = provider;
+        }
+
+        if (p.ContainsKey("model"))
+        {
+            settings.TextAiModel = string.IsNullOrWhiteSpace(Str(p, "model")) ? null : Str(p, "model")!.Trim();
+        }
+
+        if (Str(p, "ollamaUrl") is { Length: > 0 } ollama)
+        {
+            settings.OllamaUrl = TextServerEngine.NormalizeUrl(ollama);
+        }
+
+        if (Str(p, "lmStudioUrl") is { Length: > 0 } lmStudio)
+        {
+            settings.LmStudioUrl = TextServerEngine.NormalizeUrl(lmStudio);
+        }
+
+        settings.Save();
+    }
+
+    private static async Task<object> TestTextAiAsync()
+    {
+        var rewriter = S.CreateRewriter() ?? throw new InvalidOperationException("اختار موديل أو أضف مفتاح Gemini الأول.");
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var text = await rewriter.RewriteAsync("ازيك يا صاحبي، عاوز اقولك ان الاجتماع بكره الساعه عشره الصبح", WritingMode.Formal);
+        return new { text, engine = rewriter.LastEngine, seconds = Math.Round(started.Elapsed.TotalSeconds, 1), failures = rewriter.LastFailures };
     }
 
     // ===== أدوات =====

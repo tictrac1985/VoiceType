@@ -97,14 +97,15 @@ public partial class MainWindow : Window
     /// <summary>يرسل حدثًا للواجهة.</summary>
     public void Push(string name, object? data)
     {
-        if (!_ready || Web.CoreWebView2 is null)
-        {
-            return;
-        }
-
+        // لازم ننتقل لخيط الواجهة الأول: مجرد قراءة Web.CoreWebView2 من خيط تاني بترمي خطأ
         if (!Dispatcher.CheckAccess())
         {
             Dispatcher.InvokeAsync(() => Push(name, data));
+            return;
+        }
+
+        if (!_ready || Web.CoreWebView2 is null)
+        {
             return;
         }
 

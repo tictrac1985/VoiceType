@@ -123,6 +123,12 @@
     <section class="page" id="page-files">
       <header class="page-head"><h1>تفريغ ملف</h1></header>
 
+      <div class="tile meeting link-tile" id="linkTile">
+        <div class="meet-icon"><svg><use href="#i-globe"/></svg></div>
+        <input id="linkInput" class="grow" dir="ltr" placeholder="الصق لينك يوتيوب أو فيسبوك أو X أو تيك توك أو فيميو…" autocomplete="off" spellcheck="false">
+        <button class="btn primary" id="linkBtn"><svg><use href="#i-download"/></svg>تفريغ اللينك</button>
+      </div>
+
       <div class="tile meeting" id="meetingTile">
         <div class="meet-icon"><svg><use href="#i-users"/></svg></div>
         <div class="grow">
@@ -134,13 +140,17 @@
         <label class="check" id="meetingMicRow"><input type="checkbox" id="meetingMic" checked><span>صوتي أيضًا</span></label>
         <button class="btn ghost sm" id="meetingCancel" hidden>إلغاء</button>
         <button class="btn primary" id="meetingBtn"><span class="rec-dot"></span><span id="meetingBtnText">تسجيل</span></button>
+        <div class="summary-box meeting-live" id="meetingLive" hidden>
+          <div class="tile-head"><b>الكلام لحد دلوقتي</b><span class="dim sm">عرض سريع — النص النهائي بيتظبط بعد الإيقاف</span></div>
+          <div class="summary-text" id="meetingLiveText"></div>
+        </div>
       </div>
 
       <div class="tile dropzone" id="dropzone">
         <div class="drop-icon"><svg><use href="#i-upload"/></svg></div>
-        <h3>اسحب الملف هنا</h3>
-        <button class="btn primary" id="pickFile"><svg><use href="#i-folder"/></svg>اختيار ملف</button>
-        <p class="dim sm">MP3 · WAV · M4A · OGG · FLAC · MP4</p>
+        <h3>اسحب ملف أو أكتر هنا</h3>
+        <button class="btn primary" id="pickFile"><svg><use href="#i-folder"/></svg>اختيار ملفات</button>
+        <p class="dim sm">MP3 · WAV · M4A · OGG · FLAC · MP4 · WEBM — ملف واحد أو مجموعة مرة واحدة</p>
       </div>
 
       <div class="tile file-card" id="fileCard" hidden>
@@ -152,12 +162,30 @@
           </div>
           <button class="btn ghost sm" id="changeFile">ملف آخر</button>
         </div>
+        <div class="file-queue" id="fileQueue" hidden></div>
         <div class="field-row">
           <label class="field grow">
             <span>النموذج</span>
             <select id="fileEngine"></select>
           </label>
+          <label class="field" title="بيكتب «المتكلم 1»، «المتكلم 2»… قبل كلام كل واحد. بيشتغل مع النماذج اللي على جهازك.">
+            <span>مين اللي بيتكلم</span>
+            <select id="fileSpeakers" class="narrow">
+              <option value="-1">مقفول</option>
+              <option value="0">تلقائي</option>
+              <option value="2">2 متكلمين</option>
+              <option value="3">3 متكلمين</option>
+              <option value="4">4 متكلمين</option>
+              <option value="5">5 متكلمين</option>
+              <option value="6">6 متكلمين</option>
+            </select>
+          </label>
           <button class="btn primary lg" id="startFile"><svg><use href="#i-play"/></svg>ابدأ</button>
+        </div>
+        <div class="speakers-get" id="speakersGet" hidden>
+          <span class="dim sm">معرفة المتكلمين محتاجة نموذج بصمة الأصوات (24 ميجا، مرة واحدة).</span>
+          <button class="btn sm" id="speakersInstall"><svg><use href="#i-download"/></svg>تنزيل</button>
+          <div class="bar slim" id="speakersBar" hidden><i></i></div>
         </div>
         <div class="progress-box" id="fileProgress" hidden>
           <div class="progress-top"><span id="fileStage">جارٍ التحضير…</span><b id="filePercent">0%</b></div>
@@ -174,16 +202,36 @@
         <textarea id="resultText" class="result-text" spellcheck="false"></textarea>
         <div class="result-actions">
           <button class="btn primary" id="copyResult"><svg><use href="#i-copy"/></svg>نسخ</button>
-          <button class="btn" data-export="docx"><svg><use href="#i-doc"/></svg>Word</button>
-          <button class="btn" data-export="txt"><svg><use href="#i-file"/></svg>TXT</button>
-          <button class="btn" data-export="srt" id="exportSrt"><svg><use href="#i-sub"/></svg>SRT</button>
           <button class="btn" id="summarizeBtn"><svg><use href="#i-list"/></svg>تلخيص ومهام</button>
+          <button class="btn" id="translateBtn"><svg><use href="#i-globe"/></svg>ترجمة للإنجليزي</button>
+          <button class="btn" id="printResult"><svg><use href="#i-print"/></svg>طباعة</button>
           <span class="spacer"></span>
           <button class="btn ghost sm" id="showSaved" title="النسخة المحفوظة تلقائيًا"><svg><use href="#i-folder"/></svg>المجلد</button>
         </div>
+        <div class="result-actions exports">
+          <span class="dim sm">حفظ كـ</span>
+          <button class="btn sm" data-export="docx"><svg><use href="#i-doc"/></svg>Word</button>
+          <button class="btn sm" data-export="pdf"><svg><use href="#i-doc"/></svg>PDF</button>
+          <button class="btn sm" data-export="txt"><svg><use href="#i-file"/></svg>TXT</button>
+          <button class="btn sm" data-export="html"><svg><use href="#i-file"/></svg>HTML</button>
+          <button class="btn sm" data-export="json"><svg><use href="#i-file"/></svg>JSON</button>
+          <span class="sep"></span>
+          <button class="btn sm" data-export="srt" id="exportSrt"><svg><use href="#i-sub"/></svg>SRT</button>
+          <button class="btn sm" data-export="vtt" id="exportVtt"><svg><use href="#i-sub"/></svg>VTT</button>
+          <select id="captionChars" class="narrow" title="طول سطر الترجمة للفيديو">
+            <option value="42">سطر عادي</option>
+            <option value="24">سطر قصير (ريلز وشورتس)</option>
+            <option value="60">سطر طويل</option>
+            <option value="0">زي ما هو</option>
+          </select>
+        </div>
         <div class="summary-box" id="summaryBox" hidden>
-          <div class="tile-head"><b>الملخص والمهام</b><span class="spacer"></span><button class="icon-btn" id="copySummary" title="نسخ"><svg><use href="#i-copy"/></svg></button></div>
+          <div class="tile-head"><b>الملخص والمهام</b><span class="dim sm" id="summaryEngine"></span><span class="spacer"></span><button class="icon-btn" id="copySummary" title="نسخ"><svg><use href="#i-copy"/></svg></button></div>
           <div class="summary-text" id="summaryText"></div>
+        </div>
+        <div class="summary-box" id="translationBox" hidden>
+          <div class="tile-head"><b>الترجمة الإنجليزية</b><span class="dim sm" id="translationEngine"></span><span class="spacer"></span><button class="icon-btn" id="copyTranslation" title="نسخ"><svg><use href="#i-copy"/></svg></button></div>
+          <div class="summary-text" id="translationText" dir="ltr"></div>
         </div>
       </div>
     </section>
@@ -240,6 +288,32 @@
         <div class="set-row"><b>الاحتياطي</b><select id="setFallback" data-setting="fallback"></select></div>
         <div class="set-row"><b>استخدام الاحتياطي عند الفشل</b><label class="switch"><input type="checkbox" data-setting="useFallback"><span></span></label></div>
         <div class="set-row"><b>تفريغ الملفات</b><select id="setFiles" data-setting="filesEngine"></select></div>
+        <div class="set-row" title="على كرت الشاشة «تلقائي» بيستخدم البحث الأدق. «الأسرع» مناسب للأجهزة الضعيفة."><b>دقة النموذج المحلي</b>
+          <select data-setting="localBeamSize">
+            <option value="0">تلقائي</option>
+            <option value="1">الأسرع</option>
+            <option value="3">متوازن</option>
+            <option value="5">أدق</option>
+            <option value="8">أقصى دقة (أبطأ)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tile" id="aiCard">
+        <div class="tile-head"><b title="الملخص والمهام، و«صيغها لي»، والترجمة">الذكاء الاصطناعي للملخص والصياغة والترجمة</b></div>
+        <div class="set-row"><b>الموديل من</b>
+          <select id="aiProvider">
+            <option value="gemini">Gemini (مجاني بنفس مفتاح التفريغ)</option>
+            <option value="ollama">Ollama (على جهازك أو موديلاته السحابية)</option>
+            <option value="ollama-cloud">Ollama Cloud مباشرة (بمفتاح من ollama.com)</option>
+            <option value="lmstudio">LM Studio (على جهازك أو جهاز تاني)</option>
+          </select>
+        </div>
+        <div class="set-row" id="aiModelRow"><b>الموديل</b><span class="row-end"><select id="aiModel"></select><button class="icon-btn" id="aiRefresh" title="تحديث القايمة"><svg><use href="#i-refresh"/></svg></button></span></div>
+        <div class="set-row" id="aiUrlRow"><b>العنوان</b><input id="aiUrl" dir="ltr" spellcheck="false"></div>
+        <div class="set-row" id="aiKeyRow"><b>مفتاح Ollama Cloud</b><span class="row-end"><input id="aiKey" type="password" dir="ltr" placeholder="الصق المفتاح هنا" autocomplete="off"><button class="btn sm" id="aiKeySave">حفظ</button><button class="btn ghost sm danger-text" id="aiKeyRemove" hidden>حذف</button></span></div>
+        <p class="dim sm ai-hint" id="aiHint"></p>
+        <div class="field-row"><button class="btn sm" id="aiTest"><svg><use href="#i-bolt"/></svg>تجربة</button><span class="dim sm" id="aiTestResult"></span></div>
       </div>
 
       <div class="tile">
@@ -312,10 +386,18 @@
         <div class="set-row"><b>شفاف وهو غير مستخدم</b><label class="switch"><input type="checkbox" data-setting="micDimWhenIdle"><span></span></label></div>
         <div class="set-row"><b>أصوات التنبيه</b><label class="switch"><input type="checkbox" data-setting="sounds"><span></span></label></div>
         <div class="set-row"><b>التشغيل مع ويندوز</b><label class="switch"><input type="checkbox" data-setting="startWithWindows"><span></span></label></div>
+        <div class="set-row" title="لما Zoom أو Teams أو Google Meet يستخدموا الميكروفون، رسالة جنب الساعة تقترح التسجيل"><b>اقتراح تسجيل الاجتماعات</b><label class="switch"><input type="checkbox" data-setting="detectMeetings"><span></span></label></div>
       </div>
 
       <div class="tile">
-        <div class="tile-head"><b>الملفات</b><span class="spacer"></span><span class="dim sm" id="versionText"></span></div>
+        <div class="tile-head"><b>التحديثات</b><span class="spacer"></span><span class="dim sm" id="versionText"></span></div>
+        <div class="set-row"><b>دوّر على تحديثات لوحده</b><label class="switch"><input type="checkbox" data-setting="checkUpdates"><span></span></label></div>
+        <div class="field-row"><button class="btn sm" id="checkUpdate"><svg><use href="#i-refresh"/></svg>دوّر على تحديث</button><span class="dim sm" id="updateInfo"></span><span class="spacer"></span><button class="btn primary sm" id="installUpdate" hidden><svg><use href="#i-download"/></svg>تحديث دلوقتي</button></div>
+        <div class="bar slim" id="updateBar" hidden><i></i></div>
+      </div>
+
+      <div class="tile">
+        <div class="tile-head"><b>الملفات</b></div>
         <p><a href="#" class="path" dir="ltr" id="dataFolder" data-folder="data"></a></p>
         <div class="field-row">
           <button class="btn sm" data-folder="transcripts"><svg><use href="#i-folder"/></svg>النصوص المفرّغة</button>
@@ -359,6 +441,8 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14a6.5 6.5 0 0 1 3.5 6"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
 </svg>
 

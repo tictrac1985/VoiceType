@@ -51,8 +51,19 @@ public sealed class WhisperLocalEngine : ILocalEngine
     /// البحث الأدق (beam search): يجرب عدة احتمالات للجملة ويختار الأرجح، فيقل الخلط في العامية المصرية والكلمات الإنجليزية.
     /// أبطأ من الطريقة العادية، لذلك يُستخدم للملفات دائمًا وللإملاء على كرت الشاشة فقط.
     /// </summary>
-    internal static WhisperProcessorBuilder WithDecoding(WhisperProcessorBuilder builder, bool accurate) =>
-        accurate ? builder.WithBeamSearchSamplingStrategy(beam => beam.WithBeamSize(AccurateBeamSize)) : builder;
+    internal static WhisperProcessorBuilder WithDecoding(WhisperProcessorBuilder builder, bool accurate)
+    {
+        // من الإعدادات المتقدمة: المستخدم اختار رقم بنفسه (1 = الأسرع … 8 = الأدق)
+        if (BeamOverride is > 1 and var beam)
+        {
+            return builder.WithBeamSearchSamplingStrategy(b => b.WithBeamSize(beam));
+        }
+
+        return accurate && BeamOverride != 1 ? builder.WithBeamSearchSamplingStrategy(b => b.WithBeamSize(AccurateBeamSize)) : builder;
+    }
+
+    /// <summary>عرض البحث من الإعدادات المتقدمة: 0 = تلقائي، 1 = الأسرع، 3/5/8 = أدق.</summary>
+    public static int BeamOverride { get; set; }
 
     /// <summary>طبقة التشغيل التي حُمّلت فعلًا (Vulkan / Cpu ...)، بعد أول تفريغ.</summary>
     public static string? LoadedRuntime => RuntimeOptions.LoadedLibrary?.ToString();

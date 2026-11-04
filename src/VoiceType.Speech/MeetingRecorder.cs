@@ -22,6 +22,10 @@ public sealed class MeetingRecorder : IDisposable
     private string? _micPath;
     private TaskCompletionSource? _systemStopped;
     private TaskCompletionSource? _micStopped;
+    private int _systemRate;
+    private int _micRate;
+    private long _systemTaken;
+    private long _micTaken;
 
     public bool IsRecording { get; private set; }
 
@@ -40,15 +44,18 @@ public sealed class MeetingRecorder : IDisposable
         }
 
         Directory.CreateDirectory(folder);
-        FileBase = Path.Combine(folder, "اجتماع " + DateTime.Now.ToString("yyyy-MM-dd HH-mm"));
+        FileBase = Path.Combine(folder, "اجتماع " + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss"));
         _systemPath = FileBase + ".system.wav";
         _micPath = includeMic ? FileBase + ".mic.wav" : null;
         _systemFrames = 0;
+        _systemTaken = 0;
+        _micTaken = 0;
 
         try
         {
             _system = new WasapiLoopbackCapture();
-            _systemWriter = new WaveFileWriter(_systemPath, new WaveFormat(_system.WaveFormat.SampleRate, 16, 1));
+            _systemRate = _system.WaveFormat.SampleRate;
+            _systemWriter = new WaveFileWriter(_systemPath, new WaveFormat(_systemRate, 16, 1));
             _systemStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _system.DataAvailable += OnSystemData;
             _system.RecordingStopped += (_, _) => _systemStopped?.TrySetResult();
@@ -56,7 +63,8 @@ public sealed class MeetingRecorder : IDisposable
             if (includeMic)
             {
                 _mic = new WasapiCapture();
-                _micWriter = new WaveFileWriter(_micPath!, new WaveFormat(_mic.WaveFormat.SampleRate, 16, 1));
+                _micRate = _mic.WaveFormat.SampleRate;
+                _micWriter = new WaveFileWriter(_micPath!, new WaveFormat(_micRate, 16, 1));
                 _micStopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 _mic.DataAvailable += OnMicData;
                 _mic.RecordingStopped += (_, _) => _micStopped?.TrySetResult();
@@ -148,6 +156,137 @@ public sealed class MeetingRecorder : IDisposable
         }
 
         Cleanup(deleteFiles: true);
+    }
+
+    /// <summary>
+    /// للعرض أثناء التسجيل: الصوت الجديد من آخر مرة (صوت الجهاز + الميكروفون مدموجين، 16kHz).
+    /// بنقرا من الملفات اللي بتتكتب (بعد ما نحدّث رأس الملف)، من غير ما نوقف التسجيل.
+    /// المصدرين بياخدوا نفس المدة عشان يفضلوا متزامنين.
+    /// </summary>
+    public float[] TakeNewAudio16k()
+    {
+        if (!IsRecording || _systemPath is null)
+        {
+            return [];
+        }
+
+        lock (_gate)
+        {
+            _systemWriter?.Flush();
+            _micWriter?.Flush();
+        }
+
+        var systemAvailable = AvailableFrames(_systemPath) - _systemTaken;
+        var seconds = systemAvailable / (double)Math.Max(1, _systemRate);
+        if (_micPath is not null)
+        {
+            var micAvailable = AvailableFrames(_micPath) - _micTaken;
+            seconds = Math.Min(seconds, micAvailable / (double)Math.Max(1, _micRate));
+        }
+
+        if (seconds < 0.5)
+        {
+            return [];
+        }
+
+        var system = Resample(ReadFrames(_systemPath, _systemTaken, (long)(seconds * _systemRate)), _systemRate);
+        _systemTaken += (long)(seconds * _systemRate);
+        var mic = Array.Empty<float>();
+        if (_micPath is not null)
+        {
+            mic = Resample(ReadFrames(_micPath, _micTaken, (long)(seconds * _micRate)), _micRate);
+            _micTaken += (long)(seconds * _micRate);
+        }
+
+        return Mix(system, mic);
+    }
+
+    /// <summary>عدد العينات المكتوبة في ملف WAV (16-bit mono) لحد دلوقتي.</summary>
+    private static long AvailableFrames(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var data = DataOffset(stream);
+            return data < 0 ? 0 : Math.Max(0, (stream.Length - data) / 2);
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+    }
+
+    private static float[] ReadFrames(string path, long fromFrame, long count)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var data = DataOffset(stream);
+        if (data < 0 || count <= 0)
+        {
+            return [];
+        }
+
+        stream.Position = data + (fromFrame * 2);
+        var bytes = new byte[count * 2];
+        var read = stream.ReadAtLeast(bytes, bytes.Length, throwOnEndOfStream: false);
+        var samples = new float[read / 2];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            samples[i] = BitConverter.ToInt16(bytes, i * 2) / 32768f;
+        }
+
+        return samples;
+    }
+
+    /// <summary>مكان بداية الصوت في ملف WAV (بعد الرأس)، أو -1.</summary>
+    private static long DataOffset(Stream stream)
+    {
+        var header = new byte[12];
+        stream.Position = 0;
+        if (stream.ReadAtLeast(header, 12, throwOnEndOfStream: false) < 12)
+        {
+            return -1;
+        }
+
+        var chunk = new byte[8];
+        while (stream.Position + 8 <= stream.Length)
+        {
+            if (stream.ReadAtLeast(chunk, 8, throwOnEndOfStream: false) < 8)
+            {
+                return -1;
+            }
+
+            var size = BitConverter.ToUInt32(chunk, 4);
+            if (chunk[0] == 'd' && chunk[1] == 'a' && chunk[2] == 't' && chunk[3] == 'a')
+            {
+                return stream.Position;
+            }
+
+            stream.Position += size + (size & 1);
+        }
+
+        return -1;
+    }
+
+    /// <summary>تحويل بسيط لـ 16kHz (كفاية للعرض أثناء التسجيل؛ التفريغ النهائي بيستخدم التحويل الكامل).</summary>
+    public static float[] Resample(float[] samples, int rate)
+    {
+        if (rate == 16000 || samples.Length == 0)
+        {
+            return samples;
+        }
+
+        var ratio = rate / 16000.0;
+        var output = new float[(int)(samples.Length / ratio)];
+        for (var i = 0; i < output.Length; i++)
+        {
+            var position = i * ratio;
+            var index = (int)position;
+            var next = Math.Min(index + 1, samples.Length - 1);
+            var fraction = (float)(position - index);
+            output[i] = (samples[index] * (1 - fraction)) + (samples[next] * fraction);
+        }
+
+        return output;
     }
 
     /// <summary>يدمج المصدرين: جمع العينات مع منع التشبع، وطول الناتج = الأطول.</summary>

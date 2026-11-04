@@ -18,6 +18,8 @@ public partial class App : Application
     private Mutex? _mutex;
     private EventWaitHandle? _showEvent;
     private Forms.NotifyIcon? _tray;
+    private MeetingDetector? _meetings;
+    private Action? _balloonAction;
     private HotkeyManager? _hotkeys;
     private int? _escapeHotkey;
     private MainWindow? _main;
@@ -34,6 +36,19 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var isFirst);
+        if (!isFirst && e.Args.Contains("--after-update", StringComparer.OrdinalIgnoreCase))
+        {
+            // بعد التحديث: النسخة القديمة لسه بتقفل، نستناها شوية بدل ما نخرج
+            try
+            {
+                isFirst = _mutex.WaitOne(TimeSpan.FromSeconds(20));
+            }
+            catch (AbandonedMutexException)
+            {
+                isFirst = true;
+            }
+        }
+
         if (!isFirst)
         {
             // البرنامج يعمل بالفعل: نطلب منه إظهار نافذته ونخرج
@@ -51,11 +66,13 @@ public partial class App : Application
 
         DispatcherUnhandledException += OnUnhandledException;
         base.OnStartup(e);
+        _ = Task.Run(VoiceType.Speech.UpdateService.CleanupOldFiles); // بقايا التحديث اللي فات
 
         Services = new AppServices();
         Sounds.Enabled = Services.Settings.Sounds;
         TextInjector.FixMixedDirection = Services.Settings.FixMixedDirection;
         TextInjector.ArabicStartsRight = Services.Settings.ArabicStartsRight;
+        Services.ApplyLocalPrecision();
         Dictation = new DictationController(Services);
         StartupManager.Refresh(Services.Settings.StartWithWindows);
 
@@ -109,6 +126,7 @@ public partial class App : Application
         }
 
         CreateTray();
+        StartMeetingDetector();
         RegisterHotkeys();
         ListenForShowRequests();
 
@@ -116,6 +134,70 @@ public partial class App : Application
         if (!background || Services.Settings.Primary is null)
         {
             ShowMain(Services.Settings.Primary is null ? "models" : null);
+        }
+    }
+
+    /// <summary>
+    /// اكتشاف الاجتماعات: لما Zoom/Teams/Meet يستخدموا الميكروفون، رسالة جنب الساعة «تسجّل الاجتماع؟».
+    /// الضغط على الرسالة يبدأ التسجيل. ولما الاجتماع يخلص، رسالة «توقف وتفرّغ؟».
+    /// </summary>
+    private void StartMeetingDetector()
+    {
+        _meetings = new MeetingDetector { Enabled = Services.Settings.DetectMeetings };
+        _meetings.Started += app =>
+        {
+            if (!Services.Settings.DetectMeetings || VoiceType.App.MainWindow.MeetingRecording || _tray is null)
+            {
+                return;
+            }
+
+            _balloonAction = () =>
+            {
+                ShowMain("files");
+                _main?.StartMeeting(includeMic: true);
+            };
+            _tray.ShowBalloonTip(10000, "صدى", $"شكلك في اجتماع على {app}. دوس هنا عشان أسجّله وأفرّغه وألخّصه.", Forms.ToolTipIcon.Info);
+        };
+        _meetings.Ended += app =>
+        {
+            if (!VoiceType.App.MainWindow.MeetingRecording || _tray is null)
+            {
+                return;
+            }
+
+            _balloonAction = () =>
+            {
+                ShowMain("files");
+                _main?.RequestMeetingStop();
+            };
+            _tray.ShowBalloonTip(10000, "صدى", $"اجتماع {app} خلص؟ دوس هنا عشان أوقف التسجيل وأفرّغه.", Forms.ToolTipIcon.Info);
+        };
+        if (_tray is not null)
+        {
+            _tray.BalloonTipClicked += (_, _) =>
+            {
+                var action = _balloonAction;
+                _balloonAction = null;
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    // لو التسجيل مقدرش يبدأ (مفيش سماعات مثلًا): رسالة واضحة بدل نافذة خطأ تقفل البرنامج
+                    _tray?.ShowBalloonTip(8000, "صدى", ex.Message, Forms.ToolTipIcon.Warning);
+                }
+            };
+            _tray.BalloonTipClosed += (_, _) => _balloonAction = null;
+        }
+    }
+
+    /// <summary>بعد تغيير الإعداد من الواجهة.</summary>
+    public void SetMeetingDetection(bool enabled)
+    {
+        if (_meetings is not null)
+        {
+            _meetings.Enabled = enabled;
         }
     }
 

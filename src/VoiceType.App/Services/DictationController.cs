@@ -317,7 +317,7 @@ public sealed class DictationController : IDisposable
                 Notice?.Invoke(_writing == WritingMode.English ? "جارٍ الترجمة…" : "جارٍ الصياغة…", false);
                 try
                 {
-                    var rewriter = _services.CreateRewriter() ?? throw new InvalidOperationException("أضف مفتاح Gemini للصياغة.");
+                    var rewriter = _services.CreateRewriter(TimeSpan.FromSeconds(40)) ?? throw new InvalidOperationException("أضف مفتاح Gemini للصياغة.");
                     text = await rewriter.RewriteAsync(text, _writing, _cts.Token);
                     rewriteNote = _writing switch
                     {

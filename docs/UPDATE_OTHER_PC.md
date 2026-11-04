@@ -1,66 +1,62 @@
-# أمر تحديث صدى على أي جهاز من أجهزة محمد
+# أمر تحديث صدى على جهاز تاني (مرة واحدة بس)
 
-انسخ النص اللي تحت الخط، وابعته لـ Claude على الجهاز اللي محتاج تحديث.
+من نسخة 2.18 وطالع، صدى بيحدّث نفسه من جوه البرنامج: الإعدادات ← التحديثات ← «دوّر على تحديث».
+الأمر ده محتاجينه **مرة واحدة بس** على أي جهاز عليه نسخة أقدم من 2.18، زي اللاب اللي عليه 2.15.
+
+انسخ النص اللي تحت الخط، وابعته لـ Claude على الجهاز ده.
 
 ---
 
-حدّث برنامج «صدى» (VoiceType) على الجهاز ده لآخر نسخة من GitHub (v2.17 أو أحدث). اشتغل بالترتيب، ولو أي خطوة فشلت وقّف وقولّي السبب قبل ما تكمل.
+حدّث برنامج «صدى» (VoiceType) على الجهاز ده لآخر نسخة منشورة على GitHub، وخليه البرنامج الوحيد مكان Vibe. اشتغل بالترتيب، ولو أي خطوة فشلت وقّف وقولّي السبب قبل ما تكمل.
 
 **قواعد لازم تلتزم بيها:**
-- ممنوع تطبع أو تسجل أو تكتب أي مفتاح API في أي ملف. ممنوع تفتح أو تقرأ `keys.dat`. الطريقة الوحيدة لحفظ مفتاح هي `voicetype-cli.exe keys set <provider> <key>`.
+- ممنوع تطبع أو تسجل أو تكتب أي مفتاح API في أي ملف. ممنوع تفتح أو تقرأ `keys.dat`.
 - ممنوع تفعّل أي خدمة مدفوعة (`paid`)، وممنوع تنزّل أي حاجة بفلوس.
-- ممنوع تمسح أي حاجة في مجلد النماذج المشترك مع Vibe.
+- ممنوع تمسح أي ملف من غير ما تتأكد إن فيه نسخة منه في مكان تاني، أو من غير ما أوافق.
 - اعمل نسخة احتياطية من أي ملف إعدادات قبل ما تعدّله.
 
-**0) اتأكد من الجهاز:** اكتب اسم الجهاز والمعالج وكرت الشاشة والرامات، وقارنهم بالجدول ده:
+**0) اتأكد من الجهاز:** اكتب اسم الجهاز والمعالج وكرت الشاشة والرامات.
 
 | | المكتبي | اللاب |
 |---|---|---|
 | الاسم | DESKTOP-1UECKES | DESKTOP-L56NQLV |
-| العتاد | Ryzen AI 9 HX 370، Radeon 890M (AMD، Vulkan بس) | Core Ultra 9 275HX، RTX 5070 Ti 12GB |
+| العتاد | Ryzen AI 9 HX 370، Radeon 890M (Vulkan بس) | Core Ultra 9 275HX، RTX 5070 Ti 12GB |
 | الكود | `D:\my pro\مساعد الإملاء\VoiceType (الكود المصدري)` | `E:\mine\sada\VoiceType (الكود المصدري)` |
 | البرنامج | `D:\my pro\مساعد الإملاء\VoiceType (البرنامج)` | `E:\mine\sada\VoiceType (البرنامج)` |
-| النماذج المشتركة مع Vibe | `D:\VibeModels` | `E:\VibeModels` |
 
-لو الجهاز مش واحد من دول، وقّف وقولّي.
+**1) النماذج (قبل ما تشيل Vibe):** لو فيه مجلد نماذج Vibe (زي `E:\VibeModels`)، انقل كل ملفات `.bin` و `.gguf` اللي فيه لـ `<البرنامج>\data\models`.
+- لو فيه ملف بنفس الاسم في المكانين، قارن البصمة (`Get-FileHash`). لو متطابقة، امسح نسخة Vibe بس.
+- لو البصمة مختلفة، سيب الاتنين وقولّي.
+- لما المجلد يفضى خالص، امسحه.
 
-**1) هات التحديث:** في مجلد الكود شغّل `git status`. لو فيه تعديلات محلية، متمسحهاش، وقّف وقولّي. لو نظيف، شغّل `git pull --ff-only`، وبعدين اكتب آخر 4 سطور من `git log --oneline`.
+**2) شيل Vibe:** اسألني الأول. لو وافقت:
+- اقفل Vibe، وبعدين `winget uninstall --id Thewh1teagle.vibe --silent`.
+- لو فيه حاجة فاضلة، امسحها: `%LOCALAPPDATA%\vibe`، و`%APPDATA%\github.com.thewh1teagle.vibe`، و`%LOCALAPPDATA%\github.com.thewh1teagle.vibe`، والاختصارات، و`HKCU\Software\Classes\vibe`.
+- ممنوع تمسح أي تسجيلات أو نصوص أنا عاملها.
 
-**2) أداة البناء:** `dotnet --list-sdks` لازم يطلع فيه 10.x. لو مش موجود، اسألني الأول قبل ما تسطّب `winget install Microsoft.DotNet.SDK.10`. الأداة دي ببلاش.
+**3) الكود:** تاريخ المستودع اتعدّل في 2.18 (الإيميل الشخصي اتشال منه)، فـ `git pull` العادي هيفشل.
+- في مجلد الكود: `git status`. لو فيه تعديلات، وقّف وقولّي.
+- لو نظيف: `git fetch origin` وبعدين `git reset --hard origin/main`.
+- ظبط هوية الـ commits: `git config user.name tictrac1985` و `git config user.email 288169225+tictrac1985@users.noreply.github.com`.
 
-**3) الاختبارات:** `dotnet test tests/VoiceType.Tests -c Release`. لازم كل الاختبارات تنجح (211 أو أكتر).
+**4) البرنامج:** نزّل من https://github.com/tictrac1985/VoiceType/releases/latest الملفين `Sada-win-x64.zip` و `Sada-win-x64.zip.sha256`.
+- اتأكد إن بصمة الـ zip مطابقة للمكتوب في `.sha256`.
+- اقفل صدى (`Get-Process VoiceType,VoiceType.CrispHost -ErrorAction SilentlyContinue | Stop-Process`).
+- فك الـ zip فوق مجلد البرنامج. **ماتمسحش مجلد `data` ولا تغيّر فيه حاجة.**
+- شغّل `VoiceType.exe`، واتأكد إنه شغال وإن رقم النسخة في الإعدادات 2.18.0 أو أحدث.
 
-**4) البناء:** اقفل صدى (`Get-Process VoiceType -ErrorAction SilentlyContinue | Stop-Process`)، وبعدين شغّل:
-```
-dotnet publish src/VoiceType.App -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=none -o "<مجلد البرنامج>"
-```
-اتأكد إن `<مجلد البرنامج>\crispasr\VoiceType.CrispHost.exe` اتعمل. ده البرنامج المساعد لنموذج Cohere، وبيتبني مع صدى.
+**5) الإعدادات:** اقرأ `data\settings.json`، وده مفيهوش مفاتيح.
+- `primary` = `gemini|gemini-3.5-transcribe`.
+- `fallback` = `local|cohere-transcribe-arabic-q4_k-imatrix.gguf`، لو Cohere موجود في `data\models` ومحرك CrispASR موجود (`<البرنامج>\crispasr\crispasr.dll`).
+- لو Cohere مش موجود، قولّي أنزّله من الإعدادات ← النماذج المحلية (1.5 جيجا، ببلاش، والمحرك بينزل معاه لوحده). لحد ما ينزل، سيب `fallback` على `local|ggml-large-v3-q5_0.bin`.
+- `useFallback` = true، و `liveTypingBeta` = false.
+- لو هتعدّل حاجة: اقفل صدى، واعمل نسخة احتياطية، وعدّل الحقول دي بس.
 
-**5) الإعدادات:** اقرأ `data\settings.json`، وده مفيهوش مفاتيح. اتأكد من القيم دي:
-- `primary` = `gemini|gemini-3.5-transcribe`
-- `fallback` = `local|cohere-transcribe-arabic-q4_k-imatrix.gguf` (محمد جربه واختاره احتياطي بعد نماذج الإنترنت، 4 نوفمبر 2026). لو Cohere لسه مش جاهز على الجهاز (الخطوة 7)، سيب `local|ggml-large-v3-q5_0.bin` مؤقتًا لحد ما يبقى جاهز، وبعدين غيّره.
-- `useFallback` = true
-- `liveTypingBeta` = false
+**6) التقرير:** اكتبلي:
+- رقم النسخة.
+- آخر commit.
+- حالة Vibe (اتشال؟ فاضل منه حاجة؟).
+- النماذج اللي في `data\models`.
+- الإعدادات في الخطوة 5.
 
-لو أي قيمة مختلفة، اعمل نسخة احتياطية الأول، وبعدين عدّل الحقول دي بس.
-
-**6) تسريع كرت الشاشة:** اتأكد إن `C:\Windows\System32\vulkan-1.dll` و `<البرنامج>\runtimes\vulkan\win-x64\ggml-vulkan-whisper.dll` موجودين. لو التاني مش موجود، قولّي أسطّبه من جوه البرنامج: الإعدادات ← النماذج المحلية ← تسريع كرت الشاشة.
-
-**7) نموذج Cohere Arabic Q4:**
-- لو `cohere-transcribe-arabic-q4_k-imatrix.gguf` موجود في مجلد النماذج المشترك وحجمه 1510365440 بايت، ومحرك CrispASR مش موجود (`<البرنامج>\crispasr\crispasr.dll`)، قولّي أدوس «تنزيل» على Cohere من الإعدادات ← النماذج المحلية. صدى هينزّل المحرك بس (29 ميجا) ويتأكد من بصمته.
-- لو النموذج مش موجود، قولّي إنه متاح، وإن تنزيله من نفس المكان (1.5 جيجا، ببلاش). متنزلوش من غير ما أوافق.
-- أول ما النموذج والمحرك يبقوا جاهزين، اقفل صدى، وخلّي `fallback` في `data\settings.json` = `local|cohere-transcribe-arabic-q4_k-imatrix.gguf`، وبعدين افتحه تاني.
-
-**8) شغّل صدى:** `Start-Process` على `VoiceType.exe`، واتأكد إنه شغال (`Responding = True`).
-
-**9) التقرير:** اكتبلي:
-- رقم آخر commit
-- عدد الاختبارات اللي نجحت
-- حجم `VoiceType.exe`
-- قيم الإعدادات في الخطوة 5
-- حالة تسريع كرت الشاشة
-- حالة Cohere (النموذج والمحرك)
-
-**ملاحظات (متعدلش أي كود):**
-- لو الكتابة في أي برنامج فشلت، هتلاقي في `data\logs\dictation.log` سطر `insert failed: <السبب> app=<البرنامج>`. ابعتهولي.
-- سطر `local:` بيقول أنهي نموذج محلي كتب، وأخد قد إيه.
+**بعد كده:** أي تحديث جديد بيتعمل من جوه صدى: الإعدادات ← التحديثات ← «دوّر على تحديث» ← «حدّث».

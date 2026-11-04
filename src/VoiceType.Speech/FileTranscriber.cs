@@ -14,7 +14,14 @@ public sealed record FileTranscript(
     IReadOnlyList<TranscriptSegment> Segments,
     string EngineId,
     TimeSpan AudioDuration,
-    TimeSpan Elapsed);
+    TimeSpan Elapsed)
+{
+    /// <summary>هل اتعرف مين اللي قال كل جملة؟</summary>
+    public bool HasSpeakers => Segments.Any(s => s.Speaker is >= 0);
+
+    /// <summary>عدد المتكلمين اللي اتعرفوا.</summary>
+    public int SpeakerCount => Segments.Where(s => s.Speaker is >= 0).Select(s => s.Speaker).Distinct().Count();
+}
 
 public sealed record FileTranscriptionProgress(double Fraction, string Stage);
 
@@ -26,6 +33,12 @@ public sealed class FileTranscriber
 {
     /// <summary>طول الجزء المرسل لخدمات الإنترنت.</summary>
     public TimeSpan ChunkLength { get; init; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// «مين اللي بيتكلم» (اختياري): بيدّي كل جملة رقم متكلم. بيشتغل بس مع النماذج اللي على الجهاز،
+    /// لأنها بترجّع وقت كل جملة. خدمات الإنترنت بترجّع أجزاء طويلة، فمش بنستخدمه معاها.
+    /// </summary>
+    public Func<float[], IReadOnlyList<TranscriptSegment>, CancellationToken, Task<IReadOnlyList<TranscriptSegment>>>? SpeakerLabeler { get; init; }
 
     public async Task<FileTranscript> TranscribeAsync(
         string path,
@@ -45,8 +58,13 @@ public sealed class FileTranscriber
         {
             progress?.Report(new FileTranscriptionProgress(0.02, "جارٍ التفريغ على جهازك…"));
             segments = await segmented.TranscribeSegmentsAsync(samples, options,
-                new Progress<double>(f => progress?.Report(new FileTranscriptionProgress(f, "جارٍ التفريغ على جهازك…"))),
+                new Progress<double>(f => progress?.Report(new FileTranscriptionProgress(SpeakerLabeler is null ? f : f * 0.9, "جارٍ التفريغ على جهازك…"))),
                 cancellationToken).ConfigureAwait(false);
+            if (SpeakerLabeler is not null && segments.Count > 1)
+            {
+                progress?.Report(new FileTranscriptionProgress(0.92, "جارٍ معرفة مين اللي بيتكلم…"));
+                segments = await SpeakerLabeler(samples, segments, cancellationToken).ConfigureAwait(false);
+            }
         }
         else
         {
@@ -139,7 +157,7 @@ public static class AudioDecoder
         }
         else if (provider.WaveFormat.Channels > 2)
         {
-            provider = new MultiplexingSampleProvider([provider], 1);
+            provider = new DownmixToMonoProvider(provider); // 5.1/7.1: الكلام غالبًا في القناة اللي في النص، فناخد كل القنوات
         }
 
         if (provider.WaveFormat.SampleRate != AudioConverter.SampleRate)
@@ -217,5 +235,38 @@ public static class AudioDecoder
         }
 
         return parts;
+    }
+}
+
+/// <summary>يجمع كل قنوات الصوت (5.1، 7.1…) في قناة واحدة بالمتوسط.</summary>
+public sealed class DownmixToMonoProvider(ISampleProvider source) : ISampleProvider
+{
+    private readonly int _channels = source.WaveFormat.Channels;
+    private float[] _buffer = [];
+
+    public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(source.WaveFormat.SampleRate, 1);
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        var needed = count * _channels;
+        if (_buffer.Length < needed)
+        {
+            _buffer = new float[needed];
+        }
+
+        var read = source.Read(_buffer, 0, needed);
+        var frames = read / _channels;
+        for (var f = 0; f < frames; f++)
+        {
+            float sum = 0;
+            for (var c = 0; c < _channels; c++)
+            {
+                sum += _buffer[(f * _channels) + c];
+            }
+
+            buffer[offset + f] = sum / _channels;
+        }
+
+        return frames;
     }
 }

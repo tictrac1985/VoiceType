@@ -106,6 +106,7 @@ function setState(s) {
   renderDictation();
   renderSettings();
   renderFileEngines();
+  renderAi();
 }
 
 function engineByKey(key) {
@@ -273,7 +274,7 @@ on('settings.changed', () => { refreshState().catch(() => {}); });
 $('#writingModes').addEventListener('click', e => {
   const b = e.target.closest('[data-writing]');
   if (!b) return;
-  if (b.dataset.writing !== 'normal' && state && !state.hasGeminiKey) { toast('الصياغة تحتاج مفتاح Gemini (مجاني).', 'bad'); return; }
+  if (b.dataset.writing !== 'normal' && state && !state.canRewrite) { toast('الصياغة محتاجة موديل ذكاء اصطناعي: اختار واحد من الإعدادات، أو أضف مفتاح Gemini (مجاني).', 'bad'); return; }
   saveSetting({ writingMode: b.dataset.writing });
 });
 $('#micSizes').addEventListener('click', e => {
@@ -450,26 +451,64 @@ $('#testCopy').addEventListener('click', () => call('clipboard.copy', { text: $(
 let currentFile = null;
 let fileBusy = false;
 let lastResult = null;
+let queue = [];          // [{path,name,sizeMb,status:'wait'|'now'|'done'|'fail', note}]
+let queueStop = false;
 
 function renderFileEngines() {
   const sel = $('#fileEngine');
   const chosen = sel.value || state.settings.filesEngine || state.settings.primary;
   sel.innerHTML = engineOptions(chosen);
+  const sp = $('#fileSpeakers');
+  if (!sp.dataset.touched) sp.value = String(state.settings.speakers ?? -1);
+  $('#captionChars').value = String(state.settings.captionChars ?? 42);
+  renderSpeakersGet();
 }
 
-function setFile(info) {
-  if (!info) return;
-  currentFile = info;
-  $('#fileName').textContent = info.name;
-  $('#fileSize').textContent = `${info.sizeMb} ميجابايت`;
+/** «مين اللي بيتكلم» محتاج نموذج صغير: زرار تنزيل لو مش موجود. */
+function renderSpeakersGet() {
+  const wants = Number($('#fileSpeakers').value) >= 0;
+  $('#speakersGet').hidden = !wants || !!state?.speakersReady;
+}
+
+function setFiles(list) {
+  if (!list) return;
+  if (!Array.isArray(list)) list = [list];
+  list = list.filter(Boolean);
+  if (!list.length) return;
+  queue = list.map(f => ({ ...f, status: 'wait', note: '' }));
+  currentFile = queue[0];
+  $('#fileName').textContent = queue.length > 1 ? `${queue.length} ملفات` : queue[0].name;
+  const total = queue.reduce((a, f) => a + (f.sizeMb || 0), 0);
+  $('#fileSize').textContent = `${Math.round(total * 10) / 10} ميجابايت`;
   $('#fileCard').hidden = false;
   $('#dropzone').classList.add('compact');
-  $('#dropzone h3').textContent = 'اسحب ملفًا آخر إلى هنا لتغييره';
+  $('#dropzone h3').textContent = 'اسحب ملفات تانية هنا لتغييرها';
   $('#fileProgress').hidden = true;
+  renderQueue();
 }
+// متوافق مع الكود القديم (الاجتماعات)
+function setFile(info) { setFiles(info ? [info] : null); }
 
-$('#pickFile').addEventListener('click', e => { e.stopPropagation(); run(e.currentTarget, async () => setFile(await call('files.pick'))); });
-$('#changeFile').addEventListener('click', e => run(e.currentTarget, async () => setFile(await call('files.pick'))));
+function renderQueue() {
+  const box = $('#fileQueue');
+  box.hidden = queue.length < 2;
+  const label = { wait: 'في الانتظار', now: 'جارٍ التفريغ…', done: 'تم ✓', fail: 'تعذّر' };
+  box.innerHTML = queue.map((f, i) => `<div class="q ${f.status}">
+      <span class="name" title="${esc(f.name)}">${esc(f.name)}</span>
+      <span class="st">${esc(f.note || label[f.status])}</span>
+      ${f.status === 'done' ? `<button data-q-open="${i}" title="اعرض النص">${icon('file')}</button>` : ''}
+      ${f.status === 'wait' && !fileBusy ? `<button data-q-del="${i}" title="شيل">${icon('x')}</button>` : ''}
+    </div>`).join('');
+}
+$('#fileQueue').addEventListener('click', e => {
+  const del = e.target.closest('[data-q-del]');
+  if (del) { queue.splice(Number(del.dataset.qDel), 1); if (queue.length) setFiles(queue); else { $('#fileCard').hidden = true; } return; }
+  const open = e.target.closest('[data-q-open]');
+  if (open && queue[open.dataset.qOpen]?.result) { lastResult = queue[open.dataset.qOpen].result; showResult(lastResult); }
+});
+
+$('#pickFile').addEventListener('click', e => { e.stopPropagation(); run(e.currentTarget, async () => setFiles(await call('files.pick', { multi: true }))); });
+$('#changeFile').addEventListener('click', e => run(e.currentTarget, async () => setFiles(await call('files.pick', { multi: true }))));
 $('#dropzone').addEventListener('click', e => { if ($('#dropzone').classList.contains('compact')) $('#pickFile').click(); });
 
 // منع المتصفح من فتح الملف المسحوب في أي مكان بالصفحة
@@ -484,44 +523,94 @@ dz.addEventListener('drop', async e => {
   const files = e.dataTransfer?.files;
   if (!files || !files.length) return;
   try {
-    const info = host ? await call('files.dropped', {}, files) : await Mock.dropped(files[0]);
-    if (info) setFile(info); else toast('تعذّر قراءة الملف. استخدم زر «اختر ملفًا».', 'bad');
+    const info = host ? await call('files.dropped', { multi: true }, files) : await Mock.dropped(files[0]);
+    if (info && (!Array.isArray(info) || info.length)) setFiles(info); else toast('تعذّر قراءة الملف. استخدم زر «اختيار ملفات».', 'bad');
   } catch (err) { toast(err.message, 'bad'); }
 });
 
+$('#fileSpeakers').addEventListener('change', e => { e.currentTarget.dataset.touched = '1'; renderSpeakersGet(); });
+$('#speakersInstall').addEventListener('click', e => run(e.currentTarget, async () => {
+  $('#speakersBar').hidden = false;
+  await call('speakers.install');
+}));
+
+/* ===== تفريغ لينك ===== */
+$('#linkBtn').addEventListener('click', e => run(e.currentTarget, async () => {
+  const url = $('#linkInput').value.trim();
+  if (!/^https?:\/\/\S+\.\S+/i.test(url)) { toast('الصق لينك صحيح يبدأ بـ https://', 'bad'); return; }
+  if (fileBusy) return;
+  $('#fileCard').hidden = false;
+  $('#fileProgress').hidden = false;
+  $('#fileName').textContent = url;
+  $('#fileSize').textContent = 'بنزّل الصوت من اللينك…';
+  setFileProgress(0, 'بنزّل الصوت من اللينك…');
+  try {
+    const info = await call('links.fetch', { url });
+    $('#linkInput').value = '';
+    setFiles([info]);
+    $('#startFile').click();
+  } catch (err) {
+    $('#fileProgress').hidden = true;
+    throw err;
+  }
+}));
+$('#linkInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#linkBtn').click(); });
+
 $('#startFile').addEventListener('click', async () => {
-  if (!currentFile || fileBusy) return;
+  if (!queue.length || fileBusy) return;
   const engine = $('#fileEngine').value;
   if (!engine) { toast('اختر نموذجًا للتفريغ.', 'bad'); return; }
+  const speakers = Number($('#fileSpeakers').value);
+  if (speakers >= 0 && !state.speakersReady) { toast('نزّل نموذج معرفة المتكلمين الأول (24 ميجا) من الزرار اللي تحت.', 'bad'); renderSpeakersGet(); return; }
   fileBusy = true;
+  queueStop = false;
   $('#startFile').disabled = true;
   $('#changeFile').disabled = true;
   $('#fileProgress').hidden = false;
-  setFileProgress(0, 'جارٍ التحضير…');
+  let ok = 0;
   try {
-    const r = await call('files.transcribe', { path: currentFile.path, engine });
-    lastResult = r;
-    showResult(r);
-    $('#summaryBox').hidden = true;
-    toast('انتهى التفريغ وحُفظت نسخة تلقائيًا.');
-    if (autoSummarize) { autoSummarize = false; summarize(); }
-  } catch (e) {
-    toast(e.message, 'bad', 7000);
+    for (let i = 0; i < queue.length && !queueStop; i++) {
+      const f = queue[i];
+      if (f.status === 'done') continue;
+      f.status = 'now'; f.note = ''; renderQueue();
+      currentFile = f;
+      setFileProgress(0, queue.length > 1 ? `ملف ${i + 1} من ${queue.length}: جارٍ التحضير…` : 'جارٍ التحضير…');
+      try {
+        const r = await call('files.transcribe', { path: f.path, engine, speakers });
+        f.status = 'done'; f.result = r; ok++;
+        lastResult = r;
+        showResult(r);
+        $('#summaryBox').hidden = true;
+        $('#translationBox').hidden = true;
+        if (r.speakersSkipped) toast('معرفة المتكلمين بتشتغل مع النماذج اللي على جهازك بس (Cohere أو Whisper).', 'info', 6000);
+      } catch (e) {
+        f.status = 'fail'; f.note = e.message.slice(0, 80);
+        if (/أُلغي|cancel/i.test(e.message)) queueStop = true;
+        toast(e.message, 'bad', 7000);
+      }
+      renderQueue();
+    }
+    if (ok) toast(queue.length > 1 ? `خلصنا ${ok} من ${queue.length} ملف، واتحفظت نسخة من كل واحد.` : 'انتهى التفريغ وحُفظت نسخة تلقائيًا.');
+    if (ok && autoSummarize) { autoSummarize = false; summarize(); }
   } finally {
     fileBusy = false;
     $('#startFile').disabled = false;
     $('#changeFile').disabled = false;
     $('#fileProgress').hidden = true;
+    renderQueue();
   }
 });
 
 function setFileProgress(fraction, stage) {
   $('#fileBar').style.width = pct(fraction);
   $('#filePercent').textContent = pct(fraction);
-  if (stage) $('#fileStage').textContent = stage;
+  if (stage) {
+    const multi = queue.length > 1 && currentFile ? `ملف ${queue.indexOf(currentFile) + 1} من ${queue.length}: ` : '';
+    $('#fileStage').textContent = stage.startsWith('ملف ') ? stage : multi + stage;
+  }
 }
 on('file.progress', p => setFileProgress(p.fraction, p.stage));
-$('#cancelFile').addEventListener('click', () => call('files.cancel'));
+$('#cancelFile').addEventListener('click', () => { queueStop = true; call('files.cancel'); });
 
 function showResult(r) {
   $('#resultCard').hidden = false;
@@ -531,21 +620,53 @@ function showResult(r) {
     `<span class="tag">مدة الملف: ${esc(fmtDuration(r.durationSeconds))}</span>`,
     `<span class="tag">وقت التفريغ: ${esc(fmtDuration(r.elapsedSeconds))}</span>`,
     `<span class="tag">${words.toLocaleString('en-US')} كلمة</span>`,
+    r.speakers ? `<span class="tag">${r.speakers} متكلمين</span>` : '',
     `<span class="tag free-tier">${esc(r.engine)}</span>`,
   ].join('');
-  $('#exportSrt').title = r.hasTimestamps ? '' : 'التوقيتات تقريبية مع خدمات الإنترنت';
+  const tip = r.hasTimestamps ? '' : 'التوقيتات تقريبية مع خدمات الإنترنت';
+  $('#exportSrt').title = tip; $('#exportVtt').title = tip;
   setTimeout(() => $('#resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
 }
 
 $('#copyResult').addEventListener('click', () => call('clipboard.copy', { text: $('#resultText').value }).then(() => toast('تم نسخ النص كاملًا')));
 $$('[data-export]').forEach(b => b.addEventListener('click', e => run(e.currentTarget, async () => {
-  const r = await call('files.export', { format: b.dataset.export, text: $('#resultText').value });
+  const r = await call('files.export', { format: b.dataset.export, text: $('#resultText').value, captionChars: Number($('#captionChars').value) });
   if (r?.path) {
     toast('تم الحفظ');
     call('files.showInFolder', { path: r.path });
   }
 })));
+$('#captionChars').addEventListener('change', e => saveSetting({ captionChars: Number(e.currentTarget.value) }));
 $('#showSaved').addEventListener('click', () => lastResult?.savedTo && call('files.showInFolder', { path: lastResult.savedTo }));
+
+/* ===== طباعة: صفحة مرتبة من اليمين للشمال في إطار مخفي ===== */
+$('#printResult').addEventListener('click', e => run(e.currentTarget, async () => {
+  const { html } = await call('files.html', { text: $('#resultText').value });
+  let frame = $('#printFrame');
+  if (!frame) { frame = document.createElement('iframe'); frame.id = 'printFrame'; frame.className = 'print-frame'; document.body.appendChild(frame); }
+  await new Promise(resolve => { frame.onload = resolve; frame.srcdoc = html; });
+  frame.contentWindow.focus();
+  frame.contentWindow.print();
+}));
+
+/* ===== ترجمة النص كله ===== */
+$('#translateBtn').addEventListener('click', e => run(e.currentTarget, async () => {
+  const text = $('#resultText').value.trim();
+  if (!text) return;
+  const box = $('#translationBox');
+  box.hidden = false;
+  $('#translationEngine').textContent = '';
+  $('#translationText').innerHTML = '<span class="spinner"></span>';
+  try {
+    const r = await call('files.translate', { text });
+    $('#translationText').textContent = r.translation;
+    $('#translationEngine').textContent = r.engine ? `· ${r.engine}` : '';
+    toast('اتحفظت الترجمة جنب النص.');
+  } catch (err) {
+    $('#translationText').textContent = err.message;
+  }
+}));
+$('#copyTranslation').addEventListener('click', () => call('clipboard.copy', { text: $('#translationText').textContent }).then(() => toast('تم النسخ')));
 
 /* ===== تسجيل الاجتماعات ===== */
 let meetingOn = false;
@@ -560,7 +681,9 @@ function renderMeeting(on) {
   $('#meetingCancel').hidden = !on;
   $('#meetingMicRow').hidden = on;
   $('#meetingBtnText').textContent = on ? 'إيقاف وتفريغ' : 'تسجيل';
-  if (!on) $('#meetingTimer').textContent = '00:00';
+  if (!on) { $('#meetingTimer').textContent = '00:00'; $('#meetingLive').hidden = true; }
+  else if (!$('#meetingLive').dataset.started) { $('#meetingLiveText').textContent = ''; }
+  $('#meetingLive').dataset.started = on ? '1' : '';
 }
 
 $('#meetingBtn').addEventListener('click', e => run(e.currentTarget, async () => {
@@ -580,6 +703,17 @@ $('#meetingCancel').addEventListener('click', e => {
   if (!confirmInline(e.currentTarget, 'تأكيد حذف التسجيل؟')) return;
   call('meeting.cancel').then(() => renderMeeting(false));
 });
+on('meeting.live', ({ text, note }) => {
+  const box = $('#meetingLive');
+  if (!meetingOn) return;
+  box.hidden = false;
+  const out = $('#meetingLiveText');
+  if (note && !text) { out.innerHTML = `<span class="dim sm">${esc(note)}</span>`; return; }
+  if (out.querySelector('.dim')) out.textContent = '';
+  out.textContent = (out.textContent ? out.textContent + ' ' : '') + text;
+  out.scrollTop = out.scrollHeight;
+});
+on('meeting.stopRequested', () => { go('files'); if (meetingOn) $('#meetingBtn').click(); });
 on('meeting.tick', ({ seconds, level }) => {
   if (!meetingOn) renderMeeting(true);
   const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60), sec = seconds % 60;
@@ -596,6 +730,7 @@ async function summarize(button) {
   try {
     const r = await call('files.summarize', { text });
     $('#summaryText').textContent = r.summary;
+    $('#summaryEngine').textContent = r.engine ? `· ${r.engine}` : '';
   } catch (e) {
     $('#summaryText').textContent = e.message;
   } finally {
@@ -717,6 +852,13 @@ on('download.progress', p => {
     $('.dl-pct', box).textContent = p.fraction == null ? '' : pct(p.fraction);
     $('.bar', box).classList.toggle('indeterminate', p.fraction == null);
     $('.bar i', box).style.width = pct(p.fraction);
+  } else if (p.key === 'speakers') {
+    $('#speakersBar').hidden = false;
+    $('#speakersBar i').style.width = pct(p.fraction);
+  } else if (p.key === 'update') {
+    $('#updateBar').hidden = false;
+    $('#updateBar i').style.width = pct(p.fraction);
+    $('#updateInfo').textContent = 'بننزّل التحديث… ' + (p.text || '');
   } else if (p.key === urlKey) {
     $('#urlProgressText').textContent = p.text || '';
     $('#urlBar').style.width = pct(p.fraction);
@@ -727,12 +869,16 @@ on('download.progress', p => {
 on('download.done', d => {
   delete downloads[d.key];
   if (d.key === urlKey) { urlKey = null; $('#urlProgress').hidden = true; $('#modelUrl').value = ''; }
-  setState(d.state);
+  if (d.state) setState(d.state);
+  if (d.key === 'speakers') { $('#speakersBar').hidden = true; renderSpeakersGet(); toast('معرفة المتكلمين جاهزة.'); return; }
+  if (d.key === 'update') return; // البرنامج هيقفل ويفتح بالنسخة الجديدة
   toast(d.key === 'gpu' ? 'تم تفعيل تسريع كرت الشاشة.' : 'اكتمل تنزيل النموذج وأصبح جاهزًا.');
   loadLocal();
 });
 on('download.error', d => {
   delete downloads[d.key];
+  if (d.key === 'speakers') $('#speakersBar').hidden = true;
+  if (d.key === 'update') { $('#updateBar').hidden = true; $('#installUpdate').disabled = false; }
   if (d.key === urlKey) { urlKey = null; $('#urlProgress').hidden = true; }
   toast(d.message, 'bad', 6000);
   if (localData) renderLocal();
@@ -1039,6 +1185,113 @@ $('#resetProfiles').addEventListener('click', e => {
 /* =====================================================================
  *  البداية
  * ===================================================================== */
+/* ===== الذكاء الاصطناعي للملخص والصياغة والترجمة ===== */
+const AI_HINTS = {
+  gemini: 'مجاني بنفس مفتاح Gemini اللي بتفرّغ بيه. لو عاوز تشتغل من غير نت اختار Ollama أو LM Studio.',
+  ollama: 'الموديلات اللي على جهازك من Ollama، وكمان موديلاته السحابية (اللي اسمها فيه cloud) لو عامل ollama signin. صدى بيشغّل Ollama لوحده لو مقفول. لو الموديل فشل، صدى يكمّل بـ Gemini.',
+  'ollama-cloud': 'موديلات Ollama السحابية مباشرة من ollama.com بمفتاح (فيه حد مجاني، وفيه باقات بفلوس). لو الموديل فشل، صدى يكمّل بـ Gemini.',
+  lmstudio: 'موديلات LM Studio اللي على جهازك. صدى بيشغّل خادم LM Studio لوحده. ممكن تحط عنوان جهاز تاني أو LM Link. الموديلات الكبيرة ممكن تاخد وقت على كرت مدمج.',
+};
+let aiModels = [];
+function renderAi() {
+  const t = state.textAi || {};
+  const provider = $('#aiProvider').dataset.pending || t.provider || 'gemini';
+  $('#aiProvider').value = provider;
+  const server = provider !== 'gemini';
+  $('#aiModelRow').hidden = !server;
+  $('#aiUrlRow').hidden = !(provider === 'ollama' || provider === 'lmstudio');
+  $('#aiKeyRow').hidden = provider !== 'ollama-cloud';
+  $('#aiKeyRemove').hidden = !t.hasOllamaCloudKey;
+  $('#aiKey').placeholder = t.hasOllamaCloudKey ? 'المفتاح محفوظ ✓ (الصق مفتاح جديد لتغييره)' : 'الصق المفتاح هنا';
+  if (document.activeElement !== $('#aiUrl')) $('#aiUrl').value = provider === 'lmstudio' ? (t.lmStudioUrl || '') : (t.ollamaUrl || '');
+  const current = provider === t.provider ? t.model : null;
+  const list = [...new Set([...(current ? [current] : []), ...aiModels])];
+  $('#aiModel').innerHTML = list.length
+    ? list.map(m => `<option value="${esc(m)}" ${m === current ? 'selected' : ''}>${esc(m)}${/cloud/i.test(m) ? ' ☁' : ''}</option>`).join('')
+    : '<option value="">دوس ↻ عشان تجيب الموديلات</option>';
+  let hint = AI_HINTS[provider] || '';
+  if (provider === 'ollama' && t.ollamaInstalled === false) hint = 'Ollama مش متسطّب على الجهاز ده. ' + hint;
+  if (provider === 'lmstudio' && t.lmStudioInstalled === false) hint = 'LM Studio مش متسطّب على الجهاز ده (أو حط عنوان جهاز تاني). ' + hint;
+  $('#aiHint').textContent = hint;
+}
+async function loadAiModels(start = true) {
+  const provider = $('#aiProvider').value;
+  if (provider === 'gemini') return;
+  $('#aiModel').innerHTML = '<option value="">بندوّر على الموديلات…</option>';
+  const r = await call('textai.models', { provider, start });
+  aiModels = r.models || [];
+  // LM Studio كان شغال على بورت تاني: صدى لقاه وحفظه
+  if (r.url && state.textAi) { state.textAi.lmStudioUrl = r.url; toast('لقيت LM Studio على ' + r.url, 'ok', 4000); }
+  if (r.error) toast(r.error, 'bad', 7000);
+  else if (!aiModels.length) toast('مفيش موديلات. نزّل موديل الأول في ' + (provider === 'lmstudio' ? 'LM Studio' : 'Ollama') + '.', 'info', 6000);
+  renderAi();
+  if (aiModels.length && !(state.textAi?.provider === provider && state.textAi?.model)) await saveAi({ model: $('#aiModel').value });
+}
+async function saveAi(values) {
+  const provider = $('#aiProvider').value;
+  setState(await call('textai.save', { provider, ...values }));
+  delete $('#aiProvider').dataset.pending;
+}
+$('#aiProvider').addEventListener('change', e => run(e.currentTarget, async () => {
+  aiModels = [];
+  const provider = e.currentTarget.value;
+  $('#aiProvider').dataset.pending = provider;
+  $('#aiTestResult').textContent = '';
+  if (provider === 'gemini') { await saveAi({ model: '' }); toast('تم الحفظ', 'ok', 1600); return; }
+  renderAi();
+  if (provider !== 'ollama-cloud' || state.textAi?.hasOllamaCloudKey) await loadAiModels();
+  else toast('الصق مفتاح Ollama Cloud الأول (من ollama.com ← Settings ← Keys).', 'info', 6000);
+}));
+$('#aiModel').addEventListener('change', e => run(e.currentTarget, async () => { if (e.currentTarget.value) { await saveAi({ model: e.currentTarget.value }); toast('تم الحفظ', 'ok', 1600); } }));
+$('#aiRefresh').addEventListener('click', e => run(e.currentTarget, () => loadAiModels(true)));
+$('#aiUrl').addEventListener('change', e => run(e.currentTarget, async () => {
+  const key = $('#aiProvider').value === 'lmstudio' ? 'lmStudioUrl' : 'ollamaUrl';
+  await saveAi({ [key]: e.currentTarget.value.trim() });
+  await loadAiModels(false);
+}));
+$('#aiKeySave').addEventListener('click', e => run(e.currentTarget, async () => {
+  const key = $('#aiKey').value.trim();
+  if (!key) { toast('الصق المفتاح الأول.', 'bad'); return; }
+  setState(await call('textai.setKey', { key }));
+  $('#aiKey').value = '';
+  toast('اتحفظ المفتاح متشفّر.');
+  await loadAiModels(false);
+}));
+$('#aiKeyRemove').addEventListener('click', e => { if (!confirmInline(e.currentTarget, 'تأكيد الحذف؟')) return; run(e.currentTarget, async () => setState(await call('textai.removeKey'))); });
+$('#aiTest').addEventListener('click', e => run(e.currentTarget, async () => {
+  $('#aiTestResult').textContent = 'بنجرّب…';
+  try {
+    const r = await call('textai.test');
+    $('#aiTestResult').textContent = `${r.engine || ''} (${r.seconds} ث): ${r.text}` + (r.failures?.length ? `  — قبله فشل: ${r.failures[0]}` : '');
+  } catch (err) { $('#aiTestResult').textContent = err.message; }
+}));
+
+/* ===== التحديثات ===== */
+let updateInfo = null;
+function renderUpdate() {
+  const u = updateInfo;
+  $('#installUpdate').hidden = !(u && u.available);
+  if (!u) return;
+  $('#updateInfo').textContent = u.error ? u.error
+    : u.available ? `فيه نسخة جديدة ${u.latest} (عندك ${u.current}).${u.notes ? ' ' + u.notes : ''}`
+    : `عندك آخر نسخة (${u.current}).`;
+}
+async function checkUpdate(silent = false) {
+  try {
+    updateInfo = await call('update.check');
+    renderUpdate();
+    if (updateInfo.available && silent) toast(`فيه تحديث جديد لصدى (${updateInfo.latest}). من الإعدادات ← التحديثات.`, 'info', 8000);
+  } catch (err) { if (!silent) { updateInfo = { error: err.message }; renderUpdate(); } }
+}
+$('#checkUpdate').addEventListener('click', e => run(e.currentTarget, () => checkUpdate(false)));
+$('#installUpdate').addEventListener('click', e => run(e.currentTarget, async () => {
+  e.currentTarget.disabled = true;
+  $('#updateBar').hidden = false;
+  $('#updateInfo').textContent = 'بننزّل التحديث…';
+  await call('update.install');
+}));
+on('update.available', u => { updateInfo = u; renderUpdate(); });
+
 async function refreshState() { setState(await call('app.state')); }
 
 /* ===== التعلّم من Gemini ===== */
@@ -1093,6 +1346,8 @@ async function start() {
   catch (e) { toast(e.message, 'bad', 8000); }
   const initial = new URLSearchParams(location.search).get('page');
   if (initial) go(initial);
+  // تحديثات: مرة عند الفتح (لو الإعداد مفعّل)، من غير ما نزعج لو مفيش نت
+  if (state?.settings?.checkUpdates) setTimeout(() => checkUpdate(true), 4000);
 }
 
 /* =====================================================================
@@ -1113,6 +1368,10 @@ const Mock = (() => {
     usesLocal: true, gpuSupported: true, gpuInstalled: false,
     microphones: ['Microphone Array (Realtek Audio)', 'Headset (WH-1000XM4)'],
     hasGeminiKey: true,
+    canRewrite: true,
+    speakersReady: false,
+    linksReady: false,
+    textAi: { provider: 'gemini', model: null, ollamaUrl: 'http://127.0.0.1:11434', lmStudioUrl: 'http://127.0.0.1:1234', hasOllamaCloudKey: false, ollamaInstalled: true, lmStudioInstalled: true },
     recentApps: ['WINWORD', 'chrome', 'WhatsApp', 'Code'],
     profiles: [
       { id: 'chat', name: 'المحادثات', style: 'chat', writing: null, enabled: true, match: ['WhatsApp', 'Telegram', 'Messenger', 'title:WhatsApp'] },
@@ -1125,7 +1384,7 @@ const Mock = (() => {
       { id: 2, time: new Date(now - 600000).toISOString(), text: 'محتاجين نراجع الـ API قبل ما نرفع الـ update على السيرفر.', engine: 'Google Gemini', inserted: true, seconds: 2.1 },
       { id: 1, time: new Date(now - 3600000).toISOString(), text: 'اجتماع بكرة الساعة عشرة الصبح في المكتب.', engine: 'على جهازك · Whisper large-v3', inserted: false, seconds: 8.7 },
     ],
-    settings: { language: 'ar', textMode: 'General', lineBreaks: 'Sentences', learnFromOnline: true, fixMixedDirection: true, arabicStartsRight: true, liveTyping: false, writingMode: 'normal', useAppProfiles: true, primary: 'gemini|gemini-3.5-transcribe', fallback: 'local|ggml-large-v3-q5_0.bin', useFallback: true, filesEngine: 'gemini|gemini-3.5-transcribe', sounds: true, microphoneDevice: -1, micSize: 'small', micColor: 'gold', micAlwaysOnTop: true, micDimWhenIdle: false, theme: new URLSearchParams(location.search).get('theme') || 'spotlight' },
+    settings: { language: 'ar', textMode: 'General', lineBreaks: 'Sentences', learnFromOnline: true, fixMixedDirection: true, arabicStartsRight: true, liveTyping: false, writingMode: 'normal', useAppProfiles: true, primary: 'gemini|gemini-3.5-transcribe', fallback: 'local|ggml-large-v3-q5_0.bin', useFallback: true, filesEngine: 'gemini|gemini-3.5-transcribe', sounds: true, microphoneDevice: -1, micSize: 'small', micColor: 'gold', micAlwaysOnTop: true, micDimWhenIdle: false, localBeamSize: 0, speakers: -1, captionChars: 42, detectMeetings: true, checkUpdates: true, theme: new URLSearchParams(location.search).get('theme') || 'spotlight' },
     engines: [
       { key: 'local|ggml-large-v3-q5_0.bin', label: 'على جهازك · Whisper large-v3 (مضغوط)', kind: 'local', pricing: 'free', ready: true },
       { key: 'gemini|gemini-3.5-transcribe', label: 'Google Gemini · gemini-3.5-transcribe', kind: 'online', pricing: 'free-tier', ready: true },
@@ -1173,6 +1432,17 @@ const Mock = (() => {
         case 'local.list': return structuredClone(local);
         case 'providers.list': return structuredClone(providers);
         case 'files.pick': return { path: 'C:\\محاضرة الاجتماع.mp3', name: 'محاضرة الاجتماع.mp3', sizeMb: 18.4 };
+      case 'files.translate': await wait(500); return { translation: 'Speaker 1: The team discussed next month\'s plan.', savedTo: 'x', engine: 'Gemini · gemini-flash-latest' };
+      case 'files.html': return { html: '<html dir="rtl"><body><h1>تفريغ</h1><p>نص تجريبي</p></body></html>' };
+      case 'speakers.install': (async () => { for (let i = 1; i <= 10; i++) { await wait(150); emit('download.progress', { key: 'speakers', fraction: i / 10 }); } s.speakersReady = true; emit('download.done', { key: 'speakers', state: structuredClone(s) }); })(); return { key: 'speakers' };
+      case 'links.fetch': await wait(800); return { path: 'C:\\يوتيوب.m4a', name: 'فيديو من يوتيوب [abc].m4a', sizeMb: 6.2 };
+      case 'textai.models': await wait(300); return { models: params.provider === 'lmstudio' ? ['huihui-gemma-4-26b-a4b-it-abliterated', 'huihui-qwen3.8-27b-abliterated@q4_k_m'] : ['qwen3:8b', 'gpt-oss:120b-cloud'], error: null };
+      case 'textai.save': Object.assign(s.textAi, params); return structuredClone(s);
+      case 'textai.setKey': s.textAi.hasOllamaCloudKey = true; return structuredClone(s);
+      case 'textai.removeKey': s.textAi.hasOllamaCloudKey = false; return structuredClone(s);
+      case 'textai.test': await wait(500); return { text: 'مرحبًا يا صديقي، أود إبلاغك بأن الاجتماع غدًا في العاشرة صباحًا.', engine: 'Gemini · gemini-flash-latest', seconds: 1.2, failures: [] };
+      case 'update.check': await wait(400); return { available: true, current: '2.18.0', latest: '2.19.0', notes: 'تحسينات وإصلاحات.' };
+      case 'update.install': return null;
         case 'files.transcribe':
           for (let i = 0; i <= 10; i++) { emit('file.progress', { fraction: i / 10, stage: `جارٍ التفريغ… الجزء ${Math.min(i + 1, 10)} من 10` }); await wait(150); }
           return { text: sampleText, segments: 12, hasTimestamps: false, durationSeconds: 1265, elapsedSeconds: 94, engine: 'Google Gemini · gemini-3.5-transcribe', savedTo: 'x' };

@@ -23,8 +23,9 @@ public enum WritingMode
 }
 
 /// <summary>
-/// إعادة صياغة الكلام بـ Gemini (مجاني بنفس مفتاح التفريغ): رسمي، إيميل، ترجمة، وتلخيص الاجتماعات.
-/// يجرب المفاتيح والنماذج بالترتيب، ويرمي خطأ إذا فشلت كلها (فيُكتب النص كما قيل).
+/// إعادة صياغة الكلام: رسمي، إيميل، ترجمة، وتلخيص الاجتماعات.
+/// بيجرّب الموديل اللي المستخدم اختاره الأول (Ollama أو LM Studio، على الجهاز أو السحابة)،
+/// ولو فشل يكمّل بـ Gemini (مجاني بنفس مفتاح التفريغ). لو كله فشل يرمي خطأ (فيُكتب النص كما قيل).
 /// </summary>
 public sealed class TextRewriter
 {
@@ -35,15 +36,29 @@ public sealed class TextRewriter
     private readonly HttpClient _http;
     private readonly IReadOnlyList<string> _keys;
     private readonly IReadOnlyList<string> _models;
+    private readonly IReadOnlyList<ITextEngine> _preferred;
 
-    public TextRewriter(HttpClient http, IReadOnlyList<string> apiKeys, IReadOnlyList<string>? models = null)
+    public TextRewriter(HttpClient http, IReadOnlyList<string> apiKeys, IReadOnlyList<string>? models = null, IReadOnlyList<ITextEngine>? preferred = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _keys = apiKeys?.Where(k => !string.IsNullOrWhiteSpace(k)).ToList() ?? throw new ArgumentNullException(nameof(apiKeys));
         _models = models ?? DefaultModels;
+        _preferred = preferred ?? [];
     }
 
+    /// <summary>اسم آخر موديل كتب الرد (للعرض: «اتعمل بـ …»).</summary>
+    public string? LastEngine { get; private set; }
+
+    /// <summary>أخطاء الموديلات اللي فشلت قبل اللي نجح (لو فيه).</summary>
+    public IReadOnlyList<string> LastFailures { get; private set; } = [];
+
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(25);
+
+    /// <summary>
+    /// أقصى انتظار للموديل المختار (Ollama / LM Studio) قبل ما نكمّل بـ Gemini. null = مهلة الموديل نفسه.
+    /// في الإملاء بنحطها قصيرة، عشان موديل بطيء على الجهاز ميعلّقش الميكروفون دقايق.
+    /// </summary>
+    public TimeSpan? PreferredTimeout { get; init; }
 
     public static WritingMode ParseMode(string? value) => value?.ToLowerInvariant() switch
     {
@@ -93,6 +108,47 @@ public sealed class TextRewriter
     public Task<string> SummarizeAsync(string transcript, CancellationToken cancellationToken = default) =>
         GenerateAsync(SummaryInstructions, transcript, 0.2, cancellationToken);
 
+    /// <summary>ترجمة نص طويل للإنجليزي: على أجزاء (عند الفقرات) عشان الرد ميتقطعش.</summary>
+    public async Task<string> TranslateAsync(string text, CancellationToken cancellationToken = default, int maxChunkChars = 3500)
+    {
+        var parts = new List<string>();
+        foreach (var chunk in ChunkByParagraphs(text, maxChunkChars))
+        {
+            parts.Add(await GenerateAsync(Instructions(WritingMode.English) +
+                " Keep paragraph breaks and speaker labels (write «المتكلم 1:» as «Speaker 1:»).", chunk, 0.2, cancellationToken).ConfigureAwait(false));
+        }
+
+        return string.Join("\n\n", parts);
+    }
+
+    public static IReadOnlyList<string> ChunkByParagraphs(string text, int maxChars)
+    {
+        var chunks = new List<string>();
+        var current = new StringBuilder();
+        foreach (var paragraph in text.Replace("\r\n", "\n", StringComparison.Ordinal).Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (current.Length > 0 && current.Length + paragraph.Length + 2 > maxChars)
+            {
+                chunks.Add(current.ToString());
+                current.Clear();
+            }
+
+            if (current.Length > 0)
+            {
+                current.Append("\n\n");
+            }
+
+            current.Append(paragraph);
+        }
+
+        if (current.Length > 0)
+        {
+            chunks.Add(current.ToString());
+        }
+
+        return chunks;
+    }
+
     public static string RequestBody(string instructions, string text, double temperature) => new JsonObject
     {
         ["systemInstruction"] = new JsonObject { ["parts"] = new JsonArray(new JsonObject { ["text"] = instructions }) },
@@ -106,13 +162,41 @@ public sealed class TextRewriter
 
     private async Task<string> GenerateAsync(string instructions, string text, double temperature, CancellationToken cancellationToken)
     {
+        var errors = new List<string>();
+        foreach (var engine in _preferred)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (PreferredTimeout is { } preferredTimeout)
+            {
+                limit.CancelAfter(preferredTimeout);
+            }
+
+            try
+            {
+                var answer = await engine.GenerateAsync(instructions, text, temperature, limit.Token).ConfigureAwait(false);
+                LastEngine = engine.Name;
+                LastFailures = errors;
+                return answer;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                errors.Add($"{engine.Name}: اتأخر، فكمّلنا بالبديل.");
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+            {
+                errors.Add(ex.Message); // أي فشل (خادم مقفول، رد غريب…): نكمّل بالبديل (Gemini)
+            }
+        }
+
         if (_keys.Count == 0)
         {
-            throw new InvalidOperationException("أضف مفتاح Gemini أولًا (مجاني) من صفحة النماذج.");
+            throw new InvalidOperationException(errors.Count > 0
+                ? "تعذّرت الصياغة: " + string.Join(" | ", errors.Take(3))
+                : "اختار موديل للذكاء الاصطناعي من الإعدادات، أو أضف مفتاح Gemini (مجاني) من صفحة النماذج.");
         }
 
         var body = RequestBody(instructions, text, temperature);
-        var errors = new List<string>();
         foreach (var model in _models)
         {
             foreach (var key in _keys)
@@ -143,6 +227,8 @@ public sealed class TextRewriter
                     var result = ExtractText(json);
                     if (!string.IsNullOrWhiteSpace(result))
                     {
+                        LastEngine = "Gemini · " + model;
+                        LastFailures = errors;
                         return ChatTextCleanup.Clean(result).Trim();
                     }
 
@@ -189,7 +275,7 @@ public sealed class TextRewriter
 
             return builder.ToString();
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or ArgumentOutOfRangeException or InvalidOperationException or FormatException)
         {
             return string.Empty;
         }

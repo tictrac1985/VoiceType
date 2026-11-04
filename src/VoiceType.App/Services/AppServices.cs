@@ -262,14 +262,62 @@ public sealed class AppServices : IDisposable
     }
 
     /// <summary>الصياغة والتلخيص بـ Gemini (مجاني بنفس المفتاح). null إذا لم يُحفظ مفتاح Gemini.</summary>
-    public TextRewriter? CreateRewriter()
+    /// <param name="preferredTimeout">أقصى انتظار لموديل Ollama / LM Studio قبل Gemini (قصير في الإملاء).</param>
+    public TextRewriter? CreateRewriter(TimeSpan? preferredTimeout = null)
     {
         var keys = Keys.List("gemini")
             .OrderBy(k => KeyHealth.Shared.IsPaused(KeyHealth.Fingerprint("gemini", k.Value)) ? 1 : 0)
             .Select(k => k.Value)
             .ToList();
-        return keys.Count == 0 ? null : new TextRewriter(Http, keys);
+        var preferred = CreateTextEngine() is { } engine ? new List<ITextEngine> { engine } : [];
+        return keys.Count == 0 && preferred.Count == 0 ? null : new TextRewriter(Http, keys, preferred: preferred) { PreferredTimeout = preferredTimeout };
     }
+
+    /// <summary>دقة النماذج المحلية من الإعدادات المتقدمة (عرض البحث).</summary>
+    public void ApplyLocalPrecision()
+    {
+        var beam = Math.Clamp(Settings.LocalBeamSize, 0, 8);
+        WhisperLocalEngine.BeamOverride = beam;
+        CrispLocalEngine.BeamSize = beam;
+    }
+
+    /// <summary>مفتاح Ollama Cloud (لو المستخدم ضافه). محفوظ مشفّر زي باقي المفاتيح.</summary>
+    public const string OllamaCloudKeyId = "ollama-cloud";
+
+    /// <summary>الموديل اللي المستخدم اختاره للملخص والصياغة (غير Gemini)، أو null.</summary>
+    public ITextEngine? CreateTextEngine()
+    {
+        var model = Settings.TextAiModel;
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Settings.TextAiProvider switch
+            {
+                "ollama" => new TextServerEngine(Http, TextServerKind.Ollama, Settings.OllamaUrl, model),
+                "ollama-cloud" when Keys.Get(OllamaCloudKeyId) is { } key =>
+                    new TextServerEngine(Http, TextServerKind.OllamaCloud, TextServerEngine.OllamaCloudUrl, model, key) { Timeout = TimeSpan.FromMinutes(3) },
+                "lmstudio" => new TextServerEngine(Http, TextServerKind.OpenAiCompatible, Settings.LmStudioUrl, model),
+                _ => null,
+            };
+        }
+        catch (ArgumentException)
+        {
+            return null; // عنوان غلط في الإعدادات
+        }
+    }
+
+    /// <summary>نوع الخادم والعنوان والمفتاح لمزود معيّن (لعرض الموديلات).</summary>
+    public (TextServerKind Kind, string Url, string? Key)? TextServer(string provider) => provider switch
+    {
+        "ollama" => (TextServerKind.Ollama, Settings.OllamaUrl, null),
+        "ollama-cloud" => (TextServerKind.OllamaCloud, TextServerEngine.OllamaCloudUrl, Keys.Get(OllamaCloudKeyId)),
+        "lmstudio" => (TextServerKind.OpenAiCompatible, Settings.LmStudioUrl, null),
+        _ => null,
+    };
 
     public const string LiveEngineId = "gemini-live";
 

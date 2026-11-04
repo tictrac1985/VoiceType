@@ -7,20 +7,27 @@ using System.Text.Json.Nodes;
 namespace VoiceType.CrispHost;
 
 /// <summary>
-/// المساعد: يحمّل النموذج مرة واحدة، وبعدها يفرّغ كل طلب يوصله.
+/// المساعد: يحمّل نموذج التفريغ مرة واحدة (لو اتحدد)، وبعدها ينفّذ كل طلب يوصله.
 ///
-/// التشغيل:  VoiceType.CrispHost --lib &lt;مجلد crispasr.dll&gt; --model &lt;ملف.gguf&gt; [--threads N] [--gpu 1|0]
+/// التشغيل:  VoiceType.CrispHost --lib &lt;مجلد crispasr.dll&gt; [--model &lt;ملف.gguf&gt;] [--threads N] [--gpu 1|0]
+///           من غير --model: بيشتغل لمعرفة المتكلمين بس.
 ///
 /// الرسائل (كل رسالة سطر واحد يبدأ بـ "@@VT " عشان أي كلام تطبعه المكتبة نفسها ميلخبطش الردود):
 ///   عند البداية:   {"ready":true,"backend":"cohere","ms":1234}   أو   {"fatal":"..."}
-///   طلب (stdin):   {"id":1,"pcm":"C:\\...\\chunk.f32","lang":"ar"}   (الملف: أرقام float32، 16kHz، قناة واحدة)
-///   الرد:          {"id":1,"segments":[{"t0":0,"t1":250,"text":"..."}],"ms":900}   (t0/t1 بالـ 1/100 ثانية)
-///                  أو {"id":1,"error":"..."}
+///   تفريغ:         {"id":1,"pcm":"...\\chunk.f32","lang":"ar","beam":0}
+///                  ← {"id":1,"segments":[{"t0":0,"t1":250,"text":"...","words":[{"t0":0,"t1":40,"text":"..."}]}],"ms":900}
+///   مين بيتكلم:    {"id":2,"op":"diarize","pcm":"...\\all.f32","segments":[[t0,t1],...],"embedder":"...gguf","num":0,"max":6}
+///                  ← {"id":2,"speakers":[0,1,0,...],"ms":800}
+///   (الأوقات كلها بالـ 1/100 ثانية، والصوت float32، 16kHz، قناة واحدة)
+///   أي خطأ:        {"id":1,"error":"..."}
 /// ينتهي البرنامج لما صدى يقفل stdin.
 /// </summary>
 internal static unsafe class Program
 {
     private const string Marker = "@@VT ";
+
+    // لما نموذج التفريغ يكون مفتوح، المجلد الحالي ممكن يكون متغير عشانه، فمنغيّروش تاني
+    private static bool _modelOpen;
 
     private static int Main(string[] args)
     {
@@ -31,7 +38,7 @@ internal static unsafe class Program
         var model = Arg(args, "--model");
         var threads = int.TryParse(Arg(args, "--threads"), out var t) && t > 0 ? t : Math.Clamp(Environment.ProcessorCount - 2, 1, 16);
         var useGpu = Arg(args, "--gpu") != "0";
-        if (string.IsNullOrWhiteSpace(model) || !File.Exists(model))
+        if (model is not null && !File.Exists(model))
         {
             Send(stdout, new JsonObject { ["fatal"] = "ملف النموذج مش موجود: " + model });
             return 2;
@@ -49,14 +56,20 @@ internal static unsafe class Program
         }
 
         var clock = Stopwatch.StartNew();
-        var session = native.Open(model, threads, useGpu);
-        if (session == 0)
+        nint session = 0;
+        if (model is not null)
         {
-            Send(stdout, new JsonObject { ["fatal"] = "تعذّر فتح النموذج. المكتبة تدعم: " + native.AvailableBackends() });
-            return 4;
+            session = native.Open(NativePath(model, allowChangeDirectory: true), threads, useGpu);
+            if (session == 0)
+            {
+                Send(stdout, new JsonObject { ["fatal"] = "تعذّر فتح النموذج. المكتبة تدعم: " + native.AvailableBackends() });
+                return 4;
+            }
+
+            _modelOpen = true;
         }
 
-        Send(stdout, new JsonObject { ["ready"] = true, ["backend"] = native.Backend(session), ["ms"] = clock.ElapsedMilliseconds });
+        Send(stdout, new JsonObject { ["ready"] = true, ["backend"] = session == 0 ? "diarize" : native.Backend(session), ["ms"] = clock.ElapsedMilliseconds });
 
         string? line;
         while ((line = Console.In.ReadLine()) is not null)
@@ -72,9 +85,28 @@ internal static unsafe class Program
                 var request = JsonNode.Parse(line) ?? throw new FormatException("طلب فاضي.");
                 id = request["id"]?.DeepClone();
                 var pcmPath = (string?)request["pcm"] ?? throw new FormatException("الطلب ناقصه مسار الصوت.");
-                var lang = (string?)request["lang"];
                 var samples = ReadFloats(pcmPath);
                 clock.Restart();
+                if ((string?)request["op"] == "diarize")
+                {
+                    var speakers = native.Diarize(samples, request["segments"]?.AsArray() ?? [],
+                        (string?)request["embedder"] ?? throw new FormatException("ناقص نموذج الأصوات."),
+                        (int?)request["num"] ?? 0, (int?)request["max"] ?? 0, threads);
+                    Send(stdout, new JsonObject { ["id"] = id, ["speakers"] = speakers, ["ms"] = clock.ElapsedMilliseconds });
+                    continue;
+                }
+
+                if (session == 0)
+                {
+                    throw new InvalidOperationException("المساعد شغال من غير نموذج تفريغ.");
+                }
+
+                if ((int?)request["beam"] is > 0 and var beam)
+                {
+                    native.SetBeam(session, beam);
+                }
+
+                var lang = (string?)request["lang"];
                 var segments = native.Transcribe(session, samples, string.IsNullOrWhiteSpace(lang) ? "ar" : lang);
                 Send(stdout, new JsonObject { ["id"] = id, ["segments"] = segments, ["ms"] = clock.ElapsedMilliseconds });
             }
@@ -84,9 +116,73 @@ internal static unsafe class Program
             }
         }
 
-        native.Close(session);
+        if (session != 0)
+        {
+            native.Close(session);
+        }
+
         return 0;
     }
+
+    /// <summary>
+    /// مكتبة CrispASR بتفتح الملفات بـ fopen. على ويندوز fopen مبيفهمش المسارات اللي فيها حروف عربي
+    /// (زي «مساعد الإملاء»)، فبنديها مسار بحروف إنجليزي بس:
+    /// 1) المسار زي ما هو لو كله إنجليزي، 2) الاسم المختصر 8.3 لو ويندوز عامله،
+    /// 3) اسم الملف بس بعد ما نخلي مجلده هو المجلد الحالي، 4) نسخة في مجلد مؤقت لو الملف صغير (زي نموذج بصمة الأصوات).
+    /// </summary>
+    internal static string NativePath(string path, bool allowChangeDirectory)
+    {
+        var full = Path.GetFullPath(path);
+        if (!OperatingSystem.IsWindows() || IsAscii(full))
+        {
+            return full;
+        }
+
+        var buffer = new char[1024];
+        var length = GetShortPathNameW(full, buffer, buffer.Length);
+        if (length > 0 && length < buffer.Length && IsAscii(new string(buffer, 0, (int)length)))
+        {
+            return new string(buffer, 0, (int)length);
+        }
+
+        var folder = Path.GetDirectoryName(full)!;
+        var name = Path.GetFileName(full);
+        if (IsAscii(name))
+        {
+            var relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), full);
+            if (IsAscii(relative))
+            {
+                return relative;
+            }
+
+            if (allowChangeDirectory)
+            {
+                Directory.SetCurrentDirectory(folder);
+                return name;
+            }
+        }
+
+        var size = new FileInfo(full).Length;
+        var temp = Path.Combine(Path.GetTempPath(), "voicetype-crisp");
+        if (size <= 300L * 1024 * 1024 && IsAscii(temp))
+        {
+            Directory.CreateDirectory(temp);
+            var copy = Path.Combine(temp, $"{size}-{(IsAscii(name) ? name : "model" + Path.GetExtension(full))}");
+            if (!File.Exists(copy) || new FileInfo(copy).Length != size)
+            {
+                File.Copy(full, copy, overwrite: true);
+            }
+
+            return copy;
+        }
+
+        throw new IOException("مكتبة CrispASR مش بتقدر تفتح ملفات في مسار فيه حروف عربي: " + full);
+    }
+
+    private static bool IsAscii(string value) => value.All(c => c < 128);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetShortPathNameW(string longPath, [Out] char[] shortPath, int bufferLength);
 
     private static string? Arg(string[] args, string name)
     {
@@ -120,6 +216,33 @@ internal static unsafe class Program
             public fixed int Reserved[6];
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DiarizeSegment
+        {
+            public long T0;
+            public long T1;
+            public int Speaker;
+            public int Padding;
+        }
+
+        /// <summary>نفس ترتيب crispasr_diarize_opts_abi بالظبط (48 بايت على 64-bit).</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DiarizeOptions
+        {
+            public int Method;
+            public int Threads;
+            public long SliceT0;
+            public byte* PyannoteModel;
+            public byte* EmbedderModel;
+            public int MinSpeakers;
+            public int MaxSpeakers;
+            public int NumSpeakers;
+            public int Padding;
+        }
+
+        /// <summary>FoxNose: بصمة صوت WeSpeaker + تجميع (الأفضل في تجربتنا).</summary>
+        private const int FoxNose = 4;
+
         private delegate* unmanaged[Cdecl]<byte*, int, nint> _open;
         private delegate* unmanaged[Cdecl]<byte*, byte*, OpenParams*, nint> _openWithParams;
         private delegate* unmanaged[Cdecl]<nint, byte*> _backend;
@@ -130,8 +253,14 @@ internal static unsafe class Program
         private delegate* unmanaged[Cdecl]<nint, int, byte*> _segmentText;
         private delegate* unmanaged[Cdecl]<nint, int, long> _segmentT0;
         private delegate* unmanaged[Cdecl]<nint, int, long> _segmentT1;
+        private delegate* unmanaged[Cdecl]<nint, int, int> _words;
+        private delegate* unmanaged[Cdecl]<nint, int, int, byte*> _wordText;
+        private delegate* unmanaged[Cdecl]<nint, int, int, long> _wordT0;
+        private delegate* unmanaged[Cdecl]<nint, int, int, long> _wordT1;
         private delegate* unmanaged[Cdecl]<nint, void> _resultFree;
         private delegate* unmanaged[Cdecl]<nint, void> _close;
+        private delegate* unmanaged[Cdecl]<nint, int, int> _setBeam;
+        private delegate* unmanaged[Cdecl]<float*, float*, int, int, DiarizeSegment*, int, DiarizeOptions*, int> _diarize;
 
         public static Native Load(string directory)
         {
@@ -169,6 +298,27 @@ internal static unsafe class Program
                 n._transcribeLang = (delegate* unmanaged[Cdecl]<nint, float*, int, byte*, nint>)lang;
             }
 
+            if (NativeLibrary.TryGetExport(lib, "crispasr_session_result_n_words", out var words) &&
+                NativeLibrary.TryGetExport(lib, "crispasr_session_result_word_text", out var wordText) &&
+                NativeLibrary.TryGetExport(lib, "crispasr_session_result_word_t0", out var wordT0) &&
+                NativeLibrary.TryGetExport(lib, "crispasr_session_result_word_t1", out var wordT1))
+            {
+                n._words = (delegate* unmanaged[Cdecl]<nint, int, int>)words;
+                n._wordText = (delegate* unmanaged[Cdecl]<nint, int, int, byte*>)wordText;
+                n._wordT0 = (delegate* unmanaged[Cdecl]<nint, int, int, long>)wordT0;
+                n._wordT1 = (delegate* unmanaged[Cdecl]<nint, int, int, long>)wordT1;
+            }
+
+            if (NativeLibrary.TryGetExport(lib, "crispasr_session_set_beam_size", out var beam))
+            {
+                n._setBeam = (delegate* unmanaged[Cdecl]<nint, int, int>)beam;
+            }
+
+            if (NativeLibrary.TryGetExport(lib, "crispasr_diarize_segments_abi", out var diarize))
+            {
+                n._diarize = (delegate* unmanaged[Cdecl]<float*, float*, int, int, DiarizeSegment*, int, DiarizeOptions*, int>)diarize;
+            }
+
             return n;
         }
 
@@ -204,6 +354,14 @@ internal static unsafe class Program
         }
 
         public string Backend(nint session) => Marshal.PtrToStringUTF8((nint)_backend(session)) ?? string.Empty;
+
+        public void SetBeam(nint session, int size)
+        {
+            if (_setBeam != null)
+            {
+                _setBeam(session, size);
+            }
+        }
 
         public string AvailableBackends()
         {
@@ -245,12 +403,30 @@ internal static unsafe class Program
                 var count = _segments(result);
                 for (var i = 0; i < count; i++)
                 {
-                    segments.Add(new JsonObject
+                    var segment = new JsonObject
                     {
                         ["t0"] = _segmentT0(result, i),
                         ["t1"] = _segmentT1(result, i),
                         ["text"] = Marshal.PtrToStringUTF8((nint)_segmentText(result, i)) ?? string.Empty,
-                    });
+                    };
+                    if (_words != null)
+                    {
+                        var words = new JsonArray();
+                        var n = _words(result, i);
+                        for (var j = 0; j < n; j++)
+                        {
+                            words.Add(new JsonObject
+                            {
+                                ["t0"] = _wordT0(result, i, j),
+                                ["t1"] = _wordT1(result, i, j),
+                                ["text"] = Marshal.PtrToStringUTF8((nint)_wordText(result, i, j)) ?? string.Empty,
+                            });
+                        }
+
+                        segment["words"] = words;
+                    }
+
+                    segments.Add(segment);
                 }
 
                 return segments;
@@ -259,6 +435,56 @@ internal static unsafe class Program
             {
                 _resultFree(result);
             }
+        }
+
+        /// <summary>يحدد مين اللي قال كل جزء (0، 1، 2…؛ و -1 لو مش عارف).</summary>
+        public JsonArray Diarize(float[] samples, JsonArray ranges, string embedder, int numSpeakers, int maxSpeakers, int threads)
+        {
+            if (_diarize == null)
+            {
+                throw new InvalidOperationException("نسخة CrispASR دي مفيهاش معرفة المتكلمين.");
+            }
+
+            if (!File.Exists(embedder))
+            {
+                throw new FileNotFoundException("نموذج بصمة الأصوات مش موجود: " + embedder);
+            }
+
+            var segments = new DiarizeSegment[ranges.Count];
+            for (var i = 0; i < segments.Length; i++)
+            {
+                segments[i] = new DiarizeSegment { T0 = (long?)ranges[i]?[0] ?? 0, T1 = (long?)ranges[i]?[1] ?? 0, Speaker = -1 };
+            }
+
+            var embedderPath = Utf8(NativePath(embedder, allowChangeDirectory: !_modelOpen));
+            int rc;
+            fixed (float* pcm = samples)
+            fixed (DiarizeSegment* segs = segments)
+            fixed (byte* e = embedderPath)
+            {
+                var options = new DiarizeOptions
+                {
+                    Method = FoxNose,
+                    Threads = threads,
+                    EmbedderModel = e,
+                    NumSpeakers = Math.Max(0, numSpeakers),
+                    MaxSpeakers = Math.Max(0, maxSpeakers),
+                };
+                rc = segments.Length == 0 ? 0 : _diarize(pcm, pcm, samples.Length, 0, segs, segments.Length, &options);
+            }
+
+            if (rc != 0)
+            {
+                throw new InvalidOperationException($"معرفة المتكلمين فشلت (rc={rc}).");
+            }
+
+            var speakers = new JsonArray();
+            foreach (var segment in segments)
+            {
+                speakers.Add(segment.Speaker);
+            }
+
+            return speakers;
         }
 
         public void Close(nint session) => _close(session);

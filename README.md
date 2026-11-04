@@ -1,56 +1,61 @@
-# VoiceType
+# صدى (VoiceType)
 
-مساعد إملاء صوتي لـ Windows: تنقر على زر الميكروفون، وتتكلم بالعربي (المصري خصوصًا) أو بالإنجليزي، فيُكتب النص في أي برنامج.
+مساعد إملاء وتفريغ صوتي عربي لـ Windows، ومعمول للعامية المصرية بالذات: تدوس على الميكروفون العائم وتتكلم، والكلام يتكتب في أي برنامج. وكمان بيفرّغ الملفات والاجتماعات واللينكات.
 
-الخطة الكاملة في `docs/VoiceType_Project_Spec.md`.
+الخطة الكاملة وسجل التغييرات في [`docs/VoiceType_Project_Spec.md`](docs/VoiceType_Project_Spec.md).
 
-## البرنامج الجاهز
+## المميزات
 
-البرنامج في مجلد **`..\VoiceType (البرنامج)\`** بجوار هذا المجلد. افتح `VoiceType.exe` فقط، والتعليمات في `اقرأني.txt` هناك. المجلد محمول: انسخه كما هو على فلاشة.
+- **إملاء في أي برنامج:** أوامر صوتية («امسح آخر جملة»)، و«صيغها لي» (فصحى، أو إيميل، أو ترجمة للإنجليزي)، وإعداد خاص لكل برنامج.
+- **نماذج على الإنترنت:** Gemini ببلاش بمفاتيح مجانية، وتتبدّل تلقائي بين أكتر من مفتاح.
+- **نماذج على جهازك من غير نت:**
+  - Cohere Transcribe Arabic، وده الأدق والأسرع للعربي، وبيشتغل بمحرك CrispASR.
+  - Whisper Large-v3 و Turbo.
+  - بتسريع كرت الشاشة (Vulkan) على AMD و NVIDIA و Intel.
+- **تفريغ الملفات:** ملف واحد أو ملفات كتير مرة واحدة، صوت أو فيديو، أو لينك (يوتيوب، فيسبوك، X…) بأداة yt-dlp.
+- **مين اللي بيتكلم:** «المتكلم 1، المتكلم 2…» في الملفات والاجتماعات.
+- **تسجيل الاجتماعات:** صوت الجهاز وصوتك مع بعض، والكلام بيظهر وانت بتسجّل، وبيقترح التسجيل لما Zoom أو Teams أو Meet يشتغلوا. وفي الآخر ملخص وقرارات ومهام.
+- **الذكاء الاصطناعي للملخص والصياغة والترجمة:**
+  - Gemini.
+  - Ollama، على الجهاز أو موديلاته السحابية.
+  - LM Studio، على الجهاز أو بـ LM Link.
+- **التصدير:** TXT و SRT و VTT (بطول سطر مناسب للريلز) و JSON و HTML و PDF و Word، وكمان طباعة.
+- **تحديث من جوه البرنامج:** الإعدادات ← التحديثات. بيتأكد من بصمة الملف، ومبيلمسش بياناتك.
 
-أدوات المطور (`VoiceTypeLab.exe` للمقارنة، و`voicetype-cli.exe` للوكيل البرمجي) ليست في مجلد البرنامج. تُبنى بـ `scripts\build.ps1` إلى `release\dev-tools`، وتعليمات الوكيل في `docs/AGENT_PROMPT.md`.
+## التسطيب
 
-## الحالة الحالية
+1. نزّل `Sada-win-x64.zip` من [آخر إصدار](../../releases/latest)، وفكّه في أي فولدر.
+2. لازم يكون عندك [.NET Desktop Runtime 10](https://dotnet.microsoft.com/download/dotnet/10.0).
+3. شغّل `VoiceType.exe`، وضيف مفتاح Gemini مجاني أو نزّل نموذج محلي من الإعدادات.
 
-| الجزء | الحالة |
-|---|---|
-| نظام المزودات (Custom Provider + 8 مزودات مدمجة) | ✅ جاهز ومختبر |
-| إعادة المحاولة، Circuit breaker، سلسلة البدائل | ✅ جاهز ومختبر |
-| معالجة النص (الترقيم العربي، قاموس المصطلحات، الأوضاع) | ✅ المستوى الأول |
-| تقييم الجودة (WER / CER / المصطلحات الإنجليزية) | ✅ جاهز |
-| تخزين المفاتيح المشفر (DPAPI) | ✅ جاهز |
-| النماذج على الجهاز (Whisper، مجاني وبدون إنترنت) | ✅ جاهز ومختبر |
-| VoiceType Lab (واجهة المقارنة) + أداة voicetype-cli للوكيل | ✅ المرحلة 0 |
-| تطبيق Windows (زر الميكروفون العائم، الإدخال في البرامج) | ⏳ المرحلة 1 — التالي |
+المفاتيح بتتحفظ مشفّرة على جهازك بس (Windows DPAPI)، في `data\` جنب البرنامج. الفولدر ده عمره ما بيترفع ولا بيتلمس في التحديث.
 
 ## للمطور
 
 المتطلبات: Windows 10/11 و [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```powershell
-.\scripts\build.ps1     # بناء + اختبارات + إنتاج release\VoiceType و release\dev-tools
-.\scripts\compare.ps1 help
+dotnet test tests\VoiceType.Tests -c Release
+dotnet publish src\VoiceType.App -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=none -o <فولدر البرنامج>
+.\scripts\release.ps1   # نشر نسخة جديدة على GitHub Releases (بعد ما تغيّر Version في Directory.Build.props)
 ```
 
-## إضافة أي مزود
-
-كل المزودات تُعرَّف بملف JSON، بدون كود. الشرح والأمثلة في [`docs/custom-provider.md`](docs/custom-provider.md).
+إضافة أي مزود تفريغ بملف JSON من غير كود: [`docs/custom-provider.md`](docs/custom-provider.md).
 
 ## بنية المشروع
 
 ```
 src/
+  VoiceType.App/          البرنامج (WPF + WebView2): الميكروفون العائم، الواجهة، الإدخال في البرامج، التحديث
   VoiceType.Core/         الواجهات المشتركة: ISpeechEngine، الأخطاء، الصوت
-  VoiceType.Providers/    محرك المزود المخصص، الكتالوج المدمج، إعادة المحاولة، البدائل، اختبار المفاتيح
-  VoiceType.Text/         الترقيم العربي، قواميس المصطلحات، أوضاع المعالجة
-  VoiceType.Settings/     مخزن المفاتيح المشفر (DPAPI)، إعدادات المختبر، أماكن الملفات
-  VoiceType.Speech/       التفريغ المحلي (Whisper.net)، تنزيل النماذج، تسريع كرت الشاشة
-  VoiceType.Evaluation/   WER / CER، تشغيل المقارنة، التقارير (HTML / Markdown / CSV)
-tools/
-  VoiceType.Lab/          برنامج VoiceType Lab (WPF، واجهة عربية)
-  VoiceType.Cli/          أداة voicetype-cli لسطر الأوامر (للوكيل البرمجي والمطور)
-tests/
-  VoiceType.Tests/        اختبارات بدون إنترنت (ردود مزودات وهمية)
+  VoiceType.Providers/    المزودات، البدائل، إعادة المحاولة، الذكاء الاصطناعي للنص (Gemini / Ollama / LM Studio)
+  VoiceType.Text/         الترقيم العربي، المصطلحات، الأوامر الصوتية، تنسيق النص
+  VoiceType.Settings/     الإعدادات، والمفاتيح المشفرة (DPAPI)، وأماكن الملفات
+  VoiceType.Speech/       Whisper.net، و Cohere (CrispASR)، والمتكلمين، والملفات، والاجتماعات، واللينكات، والتصدير
+  VoiceType.CrispHost/    برنامج مساعد منفصل لمكتبة CrispASR (بيشتغل مخفي)
+  VoiceType.Evaluation/   قياس الدقة (WER / CER) والمقارنة
+tools/                    VoiceType Lab و voicetype-cli
+tests/                    الاختبارات
 docs/                     التوثيق
-scripts/                  build.ps1 و compare.ps1
+scripts/                  build.ps1 و compare.ps1 و release.ps1
 ```
