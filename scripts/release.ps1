@@ -41,9 +41,18 @@ foreach ($required in @("VoiceType.exe", "crispasr\VoiceType.CrispHost.exe")) {
 if (Test-Path (Join-Path $out "data")) { throw "البناء فيه مجلد data (بيانات مستخدم)! مش هننشره." }
 
 # 4) الملف المضغوط وبصمته
-# ZipFile بدل Compress-Archive: Compress-Archive في Windows PowerShell بيكتب المسارات بـ \ بدل / (مش قياسي)
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($out, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+# بنكتب كل ملف بنفسنا بمسار فيه / (Compress-Archive و CreateFromDirectory في Windows PowerShell بيكتبوا \، ودي مش الطريقة القياسية)
+Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+$archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($file in Get-ChildItem $out -Recurse -File) {
+        $entry = $file.FullName.Substring($out.Length).TrimStart('\').Replace('\', '/')
+        [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entry, [IO.Compression.CompressionLevel]::Optimal)
+    }
+}
+finally {
+    $archive.Dispose()
+}
 $check = [IO.Compression.ZipFile]::OpenRead($zip)
 $bad = @($check.Entries | Where-Object { $_.FullName.Contains('\') }).Count
 $check.Dispose()
