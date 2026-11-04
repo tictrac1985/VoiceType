@@ -41,7 +41,13 @@ foreach ($required in @("VoiceType.exe", "crispasr\VoiceType.CrispHost.exe")) {
 if (Test-Path (Join-Path $out "data")) { throw "البناء فيه مجلد data (بيانات مستخدم)! مش هننشره." }
 
 # 4) الملف المضغوط وبصمته
-Compress-Archive -Path "$out\*" -DestinationPath $zip
+# ZipFile بدل Compress-Archive: Compress-Archive في Windows PowerShell بيكتب المسارات بـ \ بدل / (مش قياسي)
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[IO.Compression.ZipFile]::CreateFromDirectory($out, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
+$check = [IO.Compression.ZipFile]::OpenRead($zip)
+$bad = @($check.Entries | Where-Object { $_.FullName.Contains('\') }).Count
+$check.Dispose()
+if ($bad -gt 0) { throw "الملف المضغوط فيه مسارات بـ \ ($bad)." }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 "$hash  Sada-win-x64.zip" | Out-File -Encoding ascii -NoNewline "$zip.sha256"
 Write-Host "SHA-256: $hash"
