@@ -69,7 +69,7 @@ public static class UpdateService
     /// <summary>
     /// بينزّل التحديث ويتأكد منه ويركّبه. بعدها البرنامج لازم يقفل ويفتح (RestartAfterUpdate).
     /// </summary>
-    public static async Task InstallAsync(UpdateInfo update, IProgress<DownloadProgress>? progress, CancellationToken cancellationToken)
+    public static async Task InstallAsync(UpdateInfo update, IProgress<DownloadProgress>? progress, CancellationToken cancellationToken, string? appFolder = null)
     {
         if (!update.Available || update.ZipUrl is null || update.ShaUrl is null)
         {
@@ -98,7 +98,7 @@ public static class UpdateService
                 throw new IOException("ملف التحديث ناقص (مفيهوش VoiceType.exe).");
             }
 
-            Apply(staging, AppContext.BaseDirectory);
+            Apply(staging, appFolder ?? AppContext.BaseDirectory);
         }
         finally
         {

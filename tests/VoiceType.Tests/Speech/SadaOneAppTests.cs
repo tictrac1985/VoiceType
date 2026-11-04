@@ -240,6 +240,44 @@ public class SadaOneAppTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>
+    /// تجربة حقيقية للتحديث من GitHub على نسخة وهمية من البرنامج (بتشتغل بس لو VT_REAL_UPDATE=1):
+    /// بنعتبر النسخة الحالية 0.1.0، فينزّل آخر إصدار ويتأكد من بصمته ويركّبه، ومجلد data ميتلمسش.
+    /// </summary>
+    [Fact]
+    public async Task Real_update_from_github_installs_into_a_copy()
+    {
+        if (Environment.GetEnvironmentVariable("VT_REAL_UPDATE") != "1")
+        {
+            output.WriteLine("skipped: set VT_REAL_UPDATE=1");
+            return;
+        }
+
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Sada-VoiceType-Updater");
+        var json = await http.GetStringAsync($"https://api.github.com/repos/{UpdateService.Repository}/releases/latest");
+        var update = UpdateService.Parse(json, new Version(0, 1, 0));
+        Assert.True(update.Available);
+
+        var app = Path.Combine(Path.GetTempPath(), "vt-real-update-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(app, "data"));
+        File.WriteAllText(Path.Combine(app, "VoiceType.exe"), "old");
+        File.WriteAllText(Path.Combine(app, "data", "settings.json"), "mine");
+        try
+        {
+            await UpdateService.InstallAsync(update, null, CancellationToken.None, app);
+            Assert.True(new FileInfo(Path.Combine(app, "VoiceType.exe")).Length > 1_000_000);
+            Assert.Equal("old", File.ReadAllText(Path.Combine(app, "VoiceType.exe.old")));
+            Assert.True(File.Exists(Path.Combine(app, "crispasr", "VoiceType.CrispHost.exe")));
+            Assert.Equal("mine", File.ReadAllText(Path.Combine(app, "data", "settings.json")));
+            output.WriteLine($"installed {update.Latest} into a copy");
+        }
+        finally
+        {
+            Directory.Delete(app, recursive: true);
+        }
+    }
+
     [Fact]
     public void Failed_update_puts_the_old_files_back()
     {
