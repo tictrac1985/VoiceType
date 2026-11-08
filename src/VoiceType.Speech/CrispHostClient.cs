@@ -65,6 +65,12 @@ internal sealed class CrispHostClient : IDisposable
             StandardInputEncoding = new UTF8Encoding(false),
             WorkingDirectory = _libraryDirectory,
         };
+        // اللاب فيه Intel مدمج (0) و NVIDIA (1): من غير ده CrispASR بياخد الكرت الضعيف (أبطأ 4 مرات)
+        if (VulkanDevices.PreferredIndex is { } gpu && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GGML_VK_VISIBLE_DEVICES")))
+        {
+            start.Environment["GGML_VK_VISIBLE_DEVICES"] = gpu.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         start.ArgumentList.Add("--lib");
         start.ArgumentList.Add(_libraryDirectory);
         if (_modelPath is not null)

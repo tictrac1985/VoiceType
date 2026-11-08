@@ -280,7 +280,11 @@ public sealed class WhisperLocalEngine : ILocalEngine
         ConfigureRuntime();
         try
         {
-            _factory = WhisperFactory.FromPath(_modelPath);
+            // نفس مشكلة الكرتين: نختار الكرت المنفصل في Vulkan (CUDA مش بننزّله، وترتيبه مختلف)
+            var cuda = Directory.Exists(Path.Combine(AppContext.BaseDirectory, "runtimes", "cuda"));
+            _factory = VulkanDevices.PreferredIndex is { } gpu && !cuda
+                ? WhisperFactory.FromPath(_modelPath, new WhisperFactoryOptions { GpuDevice = gpu })
+                : WhisperFactory.FromPath(_modelPath);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
