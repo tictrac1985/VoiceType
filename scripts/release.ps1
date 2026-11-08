@@ -64,7 +64,9 @@ Write-Host "SHA-256: $hash"
 # 5) النشر
 if (-not $Notes) { $Notes = "صدى $tag" }
 git tag -a $tag -m $Notes
+if ($LASTEXITCODE -ne 0) { throw "عمل الـ tag فشل." }
 git push -q origin $tag
-gh release create $tag $zip "$zip.sha256" --title "صدى $tag" --notes $Notes
+if ($LASTEXITCODE -ne 0) { git tag -d $tag | Out-Null; throw "رفع الـ tag فشل (اتأكد إن git push شغال، أو شغّل gh auth setup-git)." }
+gh release create $tag $zip "$zip.sha256" --verify-tag --title "صدى $tag" --notes $Notes
 if ($LASTEXITCODE -ne 0) { throw "النشر على GitHub فشل." }
 Write-Host "اتنشرت $tag ✔" -ForegroundColor Green
