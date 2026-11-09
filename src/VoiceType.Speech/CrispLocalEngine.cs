@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
 using VoiceType.Core.Speech;
+using VoiceType.Text;
 
 namespace VoiceType.Speech;
 
@@ -65,7 +66,7 @@ public sealed class CrispLocalEngine : ILocalEngine
         var (text, _) = await RunAsync(samples, options, null, cancellationToken).ConfigureAwait(false);
         return new TranscriptionResult
         {
-            Text = text,
+            Text = Hallucinations.Clean(text),
             EngineId = Id,
             Model = Path.GetFileName(_modelPath),
             Elapsed = stopwatch.Elapsed,

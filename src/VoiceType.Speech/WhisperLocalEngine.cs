@@ -3,6 +3,7 @@ using System.Text;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using VoiceType.Core.Speech;
+using VoiceType.Text;
 using Whisper.net;
 using Whisper.net.LibraryLoader;
 
@@ -141,7 +142,7 @@ public sealed class WhisperLocalEngine : ILocalEngine
             stopwatch.Stop();
             return new TranscriptionResult
             {
-                Text = text.ToString().Trim(),
+                Text = Hallucinations.Clean(text.ToString().Trim()), // «ترجمة نانسي قنقر» وأخواتها
                 EngineId = Id,
                 Model = Path.GetFileName(_modelPath),
                 Elapsed = stopwatch.Elapsed,
@@ -192,9 +193,10 @@ public sealed class WhisperLocalEngine : ILocalEngine
             {
                 await foreach (var segment in processor.ProcessAsync(samples16kMono, cancellationToken).ConfigureAwait(false))
                 {
-                    if (!string.IsNullOrWhiteSpace(segment.Text))
+                    var segmentText = Hallucinations.Clean(segment.Text);
+                    if (segmentText.Length > 0)
                     {
-                        segments.Add(new TranscriptSegment(segment.Start, segment.End, segment.Text.Trim()));
+                        segments.Add(new TranscriptSegment(segment.Start, segment.End, segmentText));
                     }
                 }
             }

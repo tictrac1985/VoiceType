@@ -36,13 +36,6 @@ public sealed record HistoryItem(int Id, DateTime Time, string Text, string Engi
 /// </summary>
 public sealed class DictationController : IDisposable
 {
-    // جمل يؤلفها Whisper أحيانًا عند الصمت أو الضوضاء
-    private static readonly string[] Hallucinations =
-    [
-        "ترجمة نانسي قنقر", "اشتركوا في القناة", "شكرا للمشاهدة", "شكراً للمشاهدة", "شكرا لكم على المشاهدة",
-        "Thank you for watching", "Thanks for watching", "Subtitles by", "you",
-    ];
-
     private readonly AppServices _services;
     private readonly AudioRecorder _recorder = new();
     private readonly List<HistoryItem> _history = [];
@@ -265,7 +258,7 @@ public sealed class DictationController : IDisposable
                     result = await engine.TranscribeAsync(new AudioPayload(batchWav, "wav", "dictation.wav"), _services.TranscriptionOptions, _cts.Token);
                     var usedLocalBatch = AppServices.IsLocal(ProviderOf(result.EngineId));
                     var rawBatch = usedLocalBatch ? _services.Learned.Apply(result.Text) : result.Text;
-                    batchText = _processor.Process(rawBatch, _textMode, _lineBreaks);
+                    batchText = Hallucinations.Clean(_processor.Process(Hallucinations.Clean(rawBatch), _textMode, _lineBreaks));
                     if (IsHallucination(batchText.Trim()))
                     {
                         batchText = string.Empty;
@@ -542,7 +535,7 @@ public sealed class DictationController : IDisposable
             return;
         }
 
-        var processed = _processor.Process(raw, _textMode, _lineBreaks);
+        var processed = Hallucinations.Clean(_processor.Process(Hallucinations.Clean(raw), _textMode, _lineBreaks));
         if (string.IsNullOrWhiteSpace(processed) || IsHallucination(processed.Trim()))
         {
             return;
@@ -1019,17 +1012,7 @@ public sealed class DictationController : IDisposable
         return _services.Catalog.All.FirstOrDefault(d => string.Equals(d.Id, provider, StringComparison.OrdinalIgnoreCase))?.Name ?? provider;
     }
 
-    private static bool IsHallucination(string text)
-    {
-        // تسرب النص التوجيهي للنموذج المحلي عند الصمت
-        if (text.Contains("هنشتغل على الـ API في Python", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        var trimmed = text.Trim().TrimEnd('.', '!', '؟', '?', '،', ',').Trim();
-        return Hallucinations.Any(h => string.Equals(trimmed, h, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool IsHallucination(string text) => Hallucinations.IsOnlyHallucination(text);
 
     private void SetState(DictationState state)
     {

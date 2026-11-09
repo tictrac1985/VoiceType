@@ -60,6 +60,7 @@ public sealed class FileTranscriber
             segments = await segmented.TranscribeSegmentsAsync(samples, options,
                 new Progress<double>(f => progress?.Report(new FileTranscriptionProgress(SpeakerLabeler is null ? f : f * 0.9, "جارٍ التفريغ على جهازك…"))),
                 cancellationToken).ConfigureAwait(false);
+            segments = Hallucinations.Clean(segments); // «ترجمة نانسي قنقر» في آخر الملف وعند السكوت
             if (SpeakerLabeler is not null && segments.Count > 1)
             {
                 progress?.Report(new FileTranscriptionProgress(0.92, "جارٍ معرفة مين اللي بيتكلم…"));
@@ -94,12 +95,13 @@ public sealed class FileTranscriber
             var wav = AudioDecoder.ToWav16k(samples, start, length);
             var result = await engine.TranscribeAsync(new AudioPayload(wav, "wav", $"part-{i + 1}.wav"), options, cancellationToken)
                 .ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(result.Text))
+            var text = Hallucinations.Clean(result.Text);
+            if (text.Length > 0)
             {
                 segments.Add(new TranscriptSegment(
                     TimeSpan.FromSeconds(start / (double)AudioConverter.SampleRate),
                     TimeSpan.FromSeconds((start + length) / (double)AudioConverter.SampleRate),
-                    result.Text.Trim()));
+                    text));
             }
         }
 

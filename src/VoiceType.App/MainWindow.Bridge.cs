@@ -971,9 +971,10 @@ public partial class MainWindow
                     // من غير إلغاء: لو وقفنا التسجيل والجزء ده لسه بيتفرّغ، بنسيبه يخلص ونرمي نتيجته.
                     // الإلغاء كان بيقفل المساعد، فالتفريغ النهائي (والإملاء) يضطروا يحمّلوا النموذج من الأول.
                     var result = await engine.TranscribeAsync(new Core.Speech.AudioPayload(AudioDecoder.ToWav16k(audio), "wav", "live.wav"), S.TranscriptionOptions, CancellationToken.None);
-                    if (!cts.IsCancellationRequested && !string.IsNullOrWhiteSpace(result.Text))
+                    var liveText = VoiceType.Text.Hallucinations.Clean(result.Text);
+                    if (!cts.IsCancellationRequested && liveText.Length > 0)
                     {
-                        Push("meeting.live", new { text = result.Text.Trim() });
+                        Push("meeting.live", new { text = liveText });
                     }
                 }
                 catch (OperationCanceledException)
